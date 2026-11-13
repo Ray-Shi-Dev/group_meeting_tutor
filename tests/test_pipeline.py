@@ -151,6 +151,7 @@ def run_main(cfg_path: Path, **flags) -> int:
     args = argparse.Namespace(
         config=str(cfg_path), dry_run=flags.get("dry_run", False), out=flags.get("out", "dryrun_out"),
         fake_llm=True, since_hours=flags.get("since_hours", 0),
+        require_test_channel=flags.get("require_test_channel", False),
     )
     return main.run(main.Config.load(str(cfg_path)), args)
 
@@ -272,6 +273,14 @@ def test() -> None:
     assert all("/_redirect/pl/p_" in c["message"] for c in posts)
     assert all(u["channel"] == "ch_test" for u in fake.uploads)
     print("6 test-channel mode ok")
+
+    # 6b) --require-test-channel：設定檔寫 thread 也只會發到測試頻道
+    fake.created.clear(); fake.uploads.clear()
+    run_main(write_cfg("thread", "forced.sqlite3"), since_hours=24 * 7, require_test_channel=True)
+    non_dm = [c for c in fake.created if c["channel_id"] != "ch_dm"]
+    assert non_dm and all(c["channel_id"] == "ch_test" and not c.get("root_id") for c in non_dm)
+    assert all(u["channel"] == "ch_test" for u in fake.uploads)
+    print("6b forced test-channel ok")
 
     # 7) HTML 附件：預設關閉，開啟後（有瀏覽器時）可轉檔
     html_src = src.find_deck_sources(fake.posts["p_html"], enable_html=False)

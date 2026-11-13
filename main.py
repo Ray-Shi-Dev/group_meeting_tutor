@@ -8,7 +8,7 @@
     python3 main.py --config config.toml --dry-run --fake-llm   # 連模型都不呼叫，只測抓貼文與轉圖
     python3 main.py --config config.toml --since-hours 720      # 測試用：回溯 30 天的貼文
 
-需要 Python 3.11+ 與 poppler-utils。
+需要 Python 3.10+ 與 poppler-utils（3.10 另需 python3-tomli）。
 """
 
 from __future__ import annotations
@@ -22,12 +22,16 @@ import shutil
 import sys
 import tempfile
 import time
-import tomllib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:  # Python 3.10：apt install python3-tomli
+    import tomli as tomllib  # type: ignore[no-redef]
 
 import sources as src
 from mattermost import MattermostClient, MattermostError
@@ -218,12 +222,29 @@ def build_decks_for_post(
 
 
 def run(cfg: Config, args: argparse.Namespace) -> int:
+    """執行一次。回傳 0 全部成功、1 有失敗項目、2 以上為無法執行。"""
+    try:
+        return _run(cfg, args)
+    except MattermostError as exc:
+        # 連不上、token 無效、Bot 不在頻道裡等：沒有任何貼文被處理
+        logger.error("MATTERMOST_ERROR status=%s code=%s", exc.status, exc.code)
+        return 5
+
+
+def _run(cfg: Config, args: argparse.Namespace) -> int:
     lock_fh = open(cfg.db_path + ".lock", "w")
     try:
         fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         logger.error("ALREADY_RUNNING")
         return 2
+
+    if getattr(args, "require_test_channel", False):
+        # 自動化檢查專用：不管設定檔怎麼寫，一律只發到測試頻道
+        if not cfg.test_channel_id:
+            logger.error("CONFIG_ERROR require_test_channel_without_test_channel_id")
+            return 4
+        cfg.reply_mode = "test_channel"
 
     mm = MattermostClient(cfg.base_url, load_token(cfg))
     try:
@@ -307,12 +328,21 @@ def run(cfg: Config, args: argparse.Namespace) -> int:
             blocked = False
 
             for deck in decks:
+                started = time.monotonic()
+                outcome = "ok"
                 try:
                     summaries.append((deck, harness.summarize_single_deck(deck, deadline)))
                 except SuspectedInjectionError:
                     blocked = True
+                    outcome = "blocked"
                 except SummaryGenerationError as exc:
                     errors.append(exc.reason_code)
+                    outcome = "failed"
+                logger.info(
+                    "DECK_TIMING post_id=%s deck=%d pages=%d elapsed=%ds outcome=%s",
+                    deck.post_id, deck.deck_index, deck.total_pages,
+                    int(time.monotonic() - started), outcome,
+                )
 
             try:
                 if blocked:
@@ -374,6 +404,10 @@ def main() -> None:
     parser.add_argument("--out", default="dryrun_out", help="dry-run 的輸出目錄")
     parser.add_argument("--fake-llm", action="store_true", help="用固定的假摘要代替模型，只測管線")
     parser.add_argument("--since-hours", type=int, default=0, help="測試用：改成回溯指定小時數的貼文")
+    parser.add_argument(
+        "--require-test-channel", action="store_true",
+        help="強制只發到測試頻道（忽略設定檔的 reply_mode），自動化檢查使用",
+    )
     args = parser.parse_args()
     sys.exit(run(Config.load(args.config), args))
 
