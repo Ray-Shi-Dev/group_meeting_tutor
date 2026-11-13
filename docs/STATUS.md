@@ -14,7 +14,7 @@
 
 | 編號 | 項目 | 負責人 | 狀態 |
 | --- | --- | --- | --- |
-| T1 | 在本機跑 `tests/test_pipeline.py` 並看到 `ALL PASS` | Ray | 進行中 |
+| T1 | 在本機跑 `tests/test_pipeline.py` 並看到 `ALL PASS` | Ray | 進行中：雲端環境已通過（Python 3.13），Ray 的 WSL 尚未跑 |
 | T2 | 用個人 token 跑 `--dry-run --fake-llm --since-hours 1440`，確認抓得到貼文、Google 匯出可用（R5、R6） | Ray | 未開始 |
 | T3 | 確認 Claude CLI 的 `--allowedTools`、`--tools ""`、`--output-format json` 行為與程式假設一致（R31） | | 未開始 |
 | T4 | 用真的模型跑 `--dry-run`，量每份簡報耗時，調整 `vision_timeout_sec` | | 未開始 |
@@ -48,5 +48,6 @@
 
 最新的寫在最上面。格式：`日期｜誰｜做了什麼`。
 
+- 2026-11-13｜Ray｜T1：從 repo 最新版本（f6497a4）在雲端環境跑 `tests/test_pipeline.py`，7 項全過。WSL 上還沒跑過。
 - 2026-11-13｜Ray｜建立 repo，加入需求、進度、決策三份文件與 CLAUDE.md。
 - 2026-11-12｜Ray｜完成第一版程式並通過假伺服器的端到端測試；真實環境尚未驗證。
