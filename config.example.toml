@@ -1,0 +1,36 @@
+# 複製成 config.toml 後填入實際值。Token 不寫在這裡：用環境變數 MM_BOT_TOKEN 或 token_file。
+
+[mattermost]
+base_url = "https://mattermost.example.edu.tw"
+channel_id = ""                 # group meeting 頻道的 ID（頻道選單 > 檢視資訊）
+token_file = "/etc/lab-summarizer/mm_token"   # 權限必須是 600
+maintainer_username = ""        # 執行結果會私訊給這個帳號
+reply_mode = "test_channel"     # 試跑期用 test_channel；正式上線改成 thread
+test_channel_id = ""            # reply_mode = test_channel 時必填
+
+[schedule]
+timezone = "Asia/Taipei"
+window_weekday = 2              # 掃描起點：上一個週三（0=週一）
+window_hour = 12                # …的 12:00
+budget_sec = 1800               # 整批的總時限：08:30 啟動，09:00 前結束
+
+[sources]
+max_download_mb = 60
+max_pages = 150
+enable_html_attachments = false # 開啟後會用無頭瀏覽器執行附件裡的 HTML，請先評估風險
+
+[llm]
+claude_bin = "/usr/local/bin/claude"   # 用 isolation_user 時必須是絕對路徑
+isolation_user = "claude-runner"       # 與 allow_direct 二擇一
+allow_direct = false                   # 整支程式已在專用低權限帳號或容器下執行時才設 true
+vision_timeout_sec = 420               # 暫定值：請用實測耗時的兩倍
+text_timeout_sec = 90
+claude_max_vision_pages = 32
+enable_ollama_fallback = false         # 建議試跑期先關閉：Claude 失敗就跳過並通知維護者
+ollama_url = "http://127.0.0.1:11434/api/chat"
+ollama_model = "qwen2.5vl:7b"          # 用 `ollama list` 確認名稱
+
+[paths]
+db_path = "/var/lib/lab-summarizer/state.sqlite3"
+work_root = ""                  # 空字串＝系統暫存目錄
+exchange_root = "/var/tmp"      # 交給 isolation_user 讀取簡報圖片的位置

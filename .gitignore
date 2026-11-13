@@ -1,0 +1,11 @@
+# 機密與本機狀態：絕對不要進版控
+config.toml
+*token*
+*.sqlite3
+*.sqlite3.lock
+dryrun_out/
+*.log
+
+__pycache__/
+*.pyc
+.venv/
