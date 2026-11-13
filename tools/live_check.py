@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-真實環境檢查：在握有 token 的機器上執行 main.py，產出「不含內容」的結果報告。
+Live environment check: run main.py on the machine that holds the token and produce a content-free report.
 
-報告只包含：環境檢查、設定檔的非機密欄位、狀態碼、貼文 ID、頁數、字數、耗時。
-不包含：token、網址、頻道 ID、帳號名稱、簡報內容、摘要內容。
+The report contains only: environment checks, non-secret config fields, status codes, post ids,
+page counts, character counts and timings. It never contains the token, URLs, channel ids,
+account names, slide content or summary content.
 
     python3 tools/live_check.py --config ~/.config/lab-summarizer/config.toml --mode dryrun-fake --result -
 
-模式：
-    dryrun-fake    不發文、不呼叫模型：測 Mattermost 讀取、簡報匯出、轉圖
-    dryrun-real    不發文、呼叫真的模型：摘要存在 --out 目錄，由人在本機檢視
-    test-channel   呼叫真的模型，發到測試頻道（強制，不會發到正式頻道）
+Modes:
+        dryrun-fake    no posting, no model calls: tests Mattermost reads, deck export and rendering
+        dryrun-real    no posting, real model: summaries stay in the --out directory for a human to read
+        test-channel   real model, posts to the test channel only (forced; never the real channel)
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ except ModuleNotFoundError:
 ROOT = Path(__file__).resolve().parent.parent
 MODES = ("dryrun-fake", "dryrun-real", "test-channel")
 
-# 只有符合這些事件代碼的日誌行會進報告，其餘（含 traceback）一律丟棄
+# Only log lines carrying one of these event codes reach the report; everything else (tracebacks too) is dropped.
 EVENT_RE = re.compile(
     r"\b(WINDOW|SUMMARY_OK|VALIDATION_RETRY|RESCUED_CANDIDATE|ACCEPTED_NEAREST|JSON_PARSE_FAIL|"
     r"PROVIDER_FALLBACK|DECK_FETCH_FAIL|DECK_TIMING|RUN_DONE|CLAUDE_CLI_NONZERO|SUSPECTED_INJECTION|"
@@ -50,7 +51,7 @@ SAFE_EXC_DETAIL_RE = re.compile(r"^mattermost status=\d+ code=[\w.\-]+$")
 
 
 def mask(text: str) -> str:
-    """遮掉網址、家目錄路徑、長的隨機字串。貼文 ID（26 碼）保留，方便對照。"""
+    """Mask URLs, home directory paths and long random strings. Post ids (26 chars) are kept for cross-reference."""
     text = re.sub(r"https?://\S+", "<url>", text)
     text = re.sub(r"/(?:home|Users)/[^/\s'\"`]+", "~", text)
     text = re.sub(r"(sk-[A-Za-z0-9\-_]+|eyJ[A-Za-z0-9\-_.]+|[A-Za-z0-9+/=_\-]{32,})", "<redacted>", text)
@@ -70,11 +71,11 @@ def preflight(config_path: Path) -> Tuple[List[str], Optional[Dict[str, Any]]]:
         ("poppler", ("pdftoppm",)), ("LibreOffice", ("soffice", "libreoffice")),
         ("Chromium", ("chromium", "chromium-browser", "google-chrome")),
     ):
-        lines.append(f"- {label}：{'有' if which_any(names) else '沒有'}")
-    lines.append(f"- TOML 解析器：{'有' if tomllib else '沒有（Python 3.10 請 apt install python3-tomli）'}")
+        lines.append(f"- {label}: {'yes' if which_any(names) else 'no'}")
+    lines.append(f"- TOML parser: {'yes' if tomllib else 'no (on Python 3.10: apt install python3-tomli)'}")
 
     if not config_path.exists():
-        lines.append("- 設定檔：找不到")
+        lines.append("- Config file: not found")
         return lines, None
     if tomllib is None:
         return lines, None
@@ -82,7 +83,7 @@ def preflight(config_path: Path) -> Tuple[List[str], Optional[Dict[str, Any]]]:
         with open(config_path, "rb") as fh:
             raw = tomllib.load(fh)
     except Exception as exc:
-        lines.append(f"- 設定檔：無法解析（{type(exc).__name__}）")
+        lines.append(f"- Config file: cannot be parsed ({type(exc).__name__})")
         return lines, None
 
     flat: Dict[str, Any] = {}
@@ -91,34 +92,34 @@ def preflight(config_path: Path) -> Tuple[List[str], Optional[Dict[str, Any]]]:
             flat.update(section)
 
     def filled(key: str) -> str:
-        return "已填" if str(flat.get(key, "")).strip() else "未填"
+        return "set" if str(flat.get(key, "")).strip() else "empty"
 
-    lines.append("- 設定檔：可解析")
+    lines.append("- Config file: parsed")
     lines.append(f"  - base_url {filled('base_url')}、channel_id {filled('channel_id')}、"
                  f"test_channel_id {filled('test_channel_id')}、maintainer_username {filled('maintainer_username')}")
     lines.append(f"  - reply_mode = {flat.get('reply_mode', 'test_channel')}")
-    lines.append(f"  - 隔離：isolation_user {filled('isolation_user')}、allow_direct = {bool(flat.get('allow_direct', False))}")
+    lines.append(f"  - isolation: isolation_user {filled('isolation_user')}, allow_direct = {bool(flat.get('allow_direct', False))}")
     lines.append(f"  - vision_timeout_sec = {flat.get('vision_timeout_sec', 420)}、"
                  f"enable_ollama_fallback = {bool(flat.get('enable_ollama_fallback', False))}、"
                  f"enable_html_attachments = {bool(flat.get('enable_html_attachments', False))}")
 
     token_file = str(flat.get("token_file", "")).strip()
     if os.environ.get("MM_BOT_TOKEN"):
-        lines.append("- Token：由環境變數提供")
+        lines.append("- Token: provided by environment variable")
     elif not token_file:
-        lines.append("- Token：token_file 未填，也沒有環境變數")
+        lines.append("- Token: token_file is empty and no environment variable is set")
     else:
         path = Path(token_file).expanduser()
         if not path.exists():
-            lines.append("- Token 檔：找不到")
+            lines.append("- Token file: not found")
         else:
             loose = bool(path.stat().st_mode & 0o077)
-            lines.append(f"- Token 檔：存在，權限{'太寬（請 chmod 600）' if loose else '正確'}")
+            lines.append(f"- Token file: present, permissions {'too open (run chmod 600)' if loose else 'ok'}")
     return lines, flat
 
 
 def cli_smoke(flat: Dict[str, Any]) -> List[str]:
-    """確認 Claude CLI 的三個參數與程式的假設一致（STATUS 的 T3）。"""
+    """Check that the three Claude CLI flags behave the way the harness assumes (T3 in STATUS)."""
     claude_bin = str(flat.get("claude_bin", "claude"))
     user = str(flat.get("isolation_user", "")).strip()
     prefix = ["sudo", "-n", "-H", "-u", user, "--"] if user else []
@@ -138,18 +139,18 @@ def cli_smoke(flat: Dict[str, Any]) -> List[str]:
             return 124, "", "timeout", time.monotonic() - started
 
     code, out, err, _ = run(["--version"], "", 30)
-    version = mask(out.strip().splitlines()[0]) if code == 0 and out.strip() else "無法取得"
+    version = mask(out.strip().splitlines()[0]) if code == 0 and out.strip() else "unavailable"
     lines.append(f"- `claude --version`：exit={code}，{version}")
     if code != 0:
-        lines.append(f"  - stderr 尾端：{mask(' '.join(err.split())[-160:])}")
+        lines.append(f"  - stderr tail: {mask(' '.join(err.split())[-160:])}")
         return lines
 
-    system = '只輸出這個 JSON，不要任何其他文字：{"ok": true}'
+    system = 'Output exactly this JSON and nothing else: {"ok": true}'
     for label, tool_args in (("--allowedTools Read", ["--allowedTools", "Read"]), ('--tools ""', ["--tools", ""])):
         code, out, err, secs = run(
-            ["-p", "--system-prompt", system, *tool_args, "--output-format", "json"], "請輸出 JSON", 180
+            ["-p", "--system-prompt", system, *tool_args, "--output-format", "json"], "Output the JSON.", 180
         )
-        detail = f"exit={code}，耗時 {secs:.0f}s"
+        detail = f"exit={code}, {secs:.0f}s"
         if code == 0:
             try:
                 outer = json.loads(out)
@@ -163,14 +164,14 @@ def cli_smoke(flat: Dict[str, Any]) -> List[str]:
                             inner_ok = json.loads(result[start : end + 1]).get("ok") is True
                         except Exception:
                             inner_ok = False
-                    detail += (f"，外層是 JSON 物件（欄位：{keys}），result 是字串：{isinstance(result, str)}，"
-                               f"內層 JSON 正確：{inner_ok}，is_error = {outer.get('is_error')}")
+                    detail += (f", outer JSON object (keys: {keys}), result is a string: {isinstance(result, str)}, "
+                                          f"inner JSON correct: {inner_ok}, is_error = {outer.get('is_error')}")
                 else:
-                    detail += f"，外層是 JSON 但不是物件（{type(outer).__name__}）"
+                    detail += f", outer JSON is not an object ({type(outer).__name__})"
             except json.JSONDecodeError:
-                detail += f"，輸出不是 JSON（長度 {len(out)}）"
+                detail += f", output is not JSON (length {len(out)})"
         else:
-            detail += f"，stderr 尾端：{mask(' '.join(err.split())[-160:])}"
+            detail += f", stderr tail: {mask(' '.join(err.split())[-160:])}"
         lines.append(f"- `-p {label} --output-format json`：{detail}")
     return lines
 
@@ -195,7 +196,7 @@ def run_main(config_path: Path, mode: str, since_hours: int, out_dir: Path) -> T
 
     events = [mask(line.strip()) for line in output.splitlines() if EVENT_RE.search(line)]
 
-    # 未預期的例外：只回報類別名稱；細節只有在確定不含機密的格式時才保留
+    # Unexpected exceptions: report the class name only; keep details only when the format is known to be safe.
     crash = ""
     non_empty = [l.strip() for l in output.splitlines() if l.strip()]
     crashed = "Traceback (most recent call last)" in output
@@ -205,32 +206,32 @@ def run_main(config_path: Path, mode: str, since_hours: int, out_dir: Path) -> T
             detail = m.group(2).strip()
             crash = m.group(1) + (f"（{detail}）" if SAFE_EXC_DETAIL_RE.match(detail) else "")
         elif code == 124:
-            crash = "執行超過 45 分鐘被終止"
+            crash = "killed after running for more than 45 minutes"
         elif not events:
-            crash = "程式以錯誤結束，沒有可回報的事件（多半是設定檔欄位錯誤，請在本機直接執行 main.py 查看訊息）"
+            crash = "exited with an error and no reportable events (usually a config problem; run main.py locally to see the message)"
     return code, events, crash
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="真實環境檢查（輸出不含內容的報告）")
+    parser = argparse.ArgumentParser(description="Live environment check (content-free report)")
     parser.add_argument("--config", required=True)
     parser.add_argument("--mode", choices=MODES, default="dryrun-fake")
     parser.add_argument("--since-hours", type=int, default=168)
-    parser.add_argument("--out", default="", help="dry-run 輸出目錄（預設在設定檔旁的 last_dryrun/）")
-    parser.add_argument("--result", default="-", help="報告檔路徑；- 表示印到終端機")
+    parser.add_argument("--out", default="", help="dry-run output directory (default: last_dryrun/ next to the config)")
+    parser.add_argument("--result", default="-", help="report file path; - prints to the terminal")
     args = parser.parse_args()
 
     config_path = Path(args.config).expanduser()
     out_dir = Path(args.out).expanduser() if args.out else config_path.parent / "last_dryrun"
 
     report: List[str] = [
-        "# 真實環境檢查結果",
+        "# Live check result",
         "",
-        f"- 時間（UTC）：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
-        f"- commit：{os.environ.get('GITHUB_SHA', '本機執行')[:12]}",
-        f"- 模式：{args.mode}，回溯 {args.since_hours} 小時",
+        f"- Time (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
+        f"- Commit: {os.environ.get('GITHUB_SHA', 'local run')[:12]}",
+        f"- Mode: {args.mode}, looking back {args.since_hours} hours",
         "",
-        "## 環境",
+        "## Environment",
     ]
     pre_lines, flat = preflight(config_path)
     report += pre_lines
@@ -244,17 +245,17 @@ def main() -> None:
         if args.mode != "test-channel" and out_dir.exists():
             shutil.rmtree(out_dir, ignore_errors=True)
         code, events, crash = run_main(config_path, args.mode, args.since_hours, out_dir)
-        report += ["", "## 執行", f"- main.py 結束代碼：{code}（0 全部成功、1 有失敗項目、5 連不上 Mattermost 或 token 無效、其他為異常）"]
+        report += ["", "## Run", f"- main.py exit code: {code} (0 all good, 1 some items failed, 5 Mattermost unreachable or bad token, other = abnormal)"]
         if crash:
-            report.append(f"- 異常：{crash}")
+            report.append(f"- Abnormal exit: {crash}")
         if args.mode != "test-channel":
             mds = len([p for p in out_dir.glob("*.md") if not p.name.startswith("_")]) if out_dir.exists() else 0
             pngs = len(list(out_dir.glob("*.png"))) if out_dir.exists() else 0
-            report.append(f"- 產出：{mds} 份回覆草稿、{pngs} 張關鍵頁圖片（留在執行機器上，未上傳）")
-        report += ["", "## 事件", "```"] + (events or ["（沒有事件）"]) + ["```"]
+            report.append(f"- Output: {mds} reply drafts, {pngs} key-page images (kept on the machine, not uploaded)")
+        report += ["", "## Events", "```"] + (events or ["(no events)"]) + ["```"]
         ok = code == 0 and not crash
     else:
-        report += ["", "## 執行", "- 設定檔有問題，未執行 main.py"]
+        report += ["", "## Run", "- Config problem; main.py was not run"]
 
     text = "\n".join(report) + "\n"
     if args.result == "-":

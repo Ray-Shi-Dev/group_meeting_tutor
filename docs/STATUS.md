@@ -1,63 +1,77 @@
-# 進度看板
+# Status board
 
-開始做一項之前，先把負責人填上並 push。做完把狀態改掉，並在最下面的「進度紀錄」加一行。
+Before starting a task, put your owner name on it and push. When done, update the status and add a line to the progress log at the bottom.
 
-負責人請填：`Ray`、`協作者`（請改成你的名字或代號）、或留空表示沒人認領。
+Owner is `Ray`, `Collaborator` (replace with your name or handle), or blank for unclaimed.
 
-## 現在的階段
+## Current phase
 
-**第一階段：在開發者自己的電腦上，不發文地跑通一次。**
+**Phase 1: run once against the real channel without posting.**
 
-下一個里程碑是用真實頻道資料跑出第一批摘要，看品質夠不夠。
+The next milestone is a first batch of summaries from real decks, read by people to judge the quality.
 
-## 待辦
+## Waiting on a human
 
-| 編號 | 項目 | 負責人 | 狀態 |
+These cannot be scripted. Details are in `docs/SETUP.md`.
+
+| What | Who | State |
+| --- | --- | --- |
+| Make the GitHub repo private | Ray | Open |
+| Run `tools/mm_setup.py` (paste channel URL and personal token) | Ray | Open |
+| If the server restricts bot creation: send the generated request to the Mattermost admin | Ray | Open |
+| Sign in to the Claude CLI on the execution machine | Ray | Open |
+| Register the self-hosted runner | Ray | Open |
+
+## Tasks
+
+| Id | Task | Owner | Status |
 | --- | --- | --- | --- |
-| T1 | 在本機跑 `tests/test_pipeline.py` 並看到 `ALL PASS` | Ray | 進行中：雲端環境已通過（Python 3.13），Ray 的 WSL 尚未跑 |
-| T2 | 用個人 token 跑 `--dry-run --fake-llm --since-hours 1440`，確認抓得到貼文、Google 匯出可用（R5、R6） | Ray | 未開始 |
-| T3 | 確認 Claude CLI 的 `--allowedTools`、`--tools ""`、`--output-format json` 行為與程式假設一致（R31） | Ray | 完成：CLI 2.1.323 實測三個參數皆符合；`live_check.py` 每次會在執行機器上重新確認 |
-| T4 | 用真的模型跑 `--dry-run`，量每份簡報耗時，調整 `vision_timeout_sec` | Ray | 部分完成：合成簡報 8 頁約 50 秒、30 頁約 70 秒，420 秒的時限足夠；真實簡報待 runner 上量測 |
-| T5 | 找 1–2 位非本科系的人，依 README 的驗收清單看 3 份摘要（論文、工具、經驗各一） | | 未開始 |
-| T6 | 請 Mattermost 管理員開 Bot 帳號與測試頻道（R26、R30） | | 未開始 |
-| T7 | 決定程式跑在哪台機器，建立專用低權限帳號（R36） | | 未開始 |
-| T8 | 部署 cron，在測試頻道試跑兩週（R1、R30） | | 未開始 |
-| T9 | 確認 `ollama_model` 名稱，決定要不要開啟本地備援（R32） | | 未開始 |
-| T10 | 評估是否開啟 HTML 附件（R9） | | 未開始 |
-| T11 | 切換成 `reply_mode = "thread"` 正式上線 | | 未開始 |
-| T12 | 自動化開發循環：GitHub 代管的離線測試 + 自架 runner 的真實環境檢查，結果寫回 `ci-results` 分支 | Ray | 程式完成；等人工設定 runner（見 `docs/RUNNER_SETUP.md`） |
-| T13 | 相容 Python 3.10（Ubuntu 22.04 預設版本） | Ray | 完成（由 offline-tests 持續驗證） |
-| T14 | 把 repo 內容改成英文（文件、註解、說明文字）；提示詞與發到 Mattermost 的文字維持繁體中文 | Ray | 進行中 |
-| T15 | `tools/mm_setup.py`：用個人 token 自動建立測試頻道、嘗試建立 Bot、寫好設定檔（把 T6 的人工步驟降到最少） | Ray | 進行中 |
+| T1 | Run `tests/test_pipeline.py` locally and see `ALL PASS` | Ray | Passed in the cloud environment and on GitHub-hosted CI; not yet run on Ray's WSL |
+| T2 | Run the `dryrun-fake` live check with a personal token: confirm posts can be read and Google export works (R5, R6) | Ray | Not started (needs `mm_setup.py` to be run) |
+| T3 | Confirm the Claude CLI flags `--allowedTools`, `--tools ""`, `--output-format json` behave as the code assumes (R31) | Ray | Done: verified with CLI 2.1.323; `live_check.py` re-checks on the execution machine |
+| T4 | Run `dryrun-real`, measure time per deck, tune `vision_timeout_sec` | Ray | Partly done: synthetic decks take about 50 s for 8 pages and 70 s for 30 pages, so 420 s is enough; real decks still to be measured |
+| T5 | Have 1–2 people from outside the field read 3 summaries (paper, tool, experience) against the acceptance checklist | | Not started |
+| T6 | Bot account and test channel (R26, R30) | Ray | Scripted in T15; waiting on a human to run it |
+| T7 | Decide which machine runs the agent and create a dedicated low-privilege account (R36) | | Not started |
+| T8 | Deploy cron and run a two-week trial in the test channel (R1, R30) | | Not started |
+| T9 | Confirm the `ollama_model` name and decide whether to enable the local fallback (R32) | | Not started |
+| T10 | Decide whether to enable HTML attachments (R9) | | Not started |
+| T11 | Switch to `reply_mode = "thread"` and go live | | Not started |
+| T12 | Automated development loop: offline tests on GitHub-hosted machines plus live checks on a self-hosted runner, results on the `ci-results` branch | Ray | Code done and the offline half is running; the live half waits on the runner |
+| T13 | Support Python 3.10 (Ubuntu 22.04 default) | Ray | Done (kept verified by offline-tests) |
+| T14 | Convert the repo to English; prompts and Mattermost text stay in Traditional Chinese | Ray | Done |
+| T15 | `tools/mm_setup.py`: create the test channel, try to create the bot, save its token, write the config | Ray | Done, tested against a fake server; unverified on the real server |
 
-## 待討論
+## To discuss
 
-需要兩個人或老師決定的事，有結論後移到 `DECISIONS.md`。
+Questions that need both people or the professor. Move the outcome to `DECISIONS.md`.
 
-- repo 目前是公開的。自架 runner 與 `ci-results` 分支都假設 repo 是私人的，裝 runner 之前要先決定。
-- 摘要要掛在誰的訂閱上跑？該訂閱的條款是否允許排程自動執行？
-- 講者不想被摘要時用 `#no-summary`，這個做法要不要先跟大家公告？
-- 08:30 的版本常常不是最終版，要不要改成更晚觸發，或 meeting 後再補一版？
+- Whose subscription runs the summaries, and do its terms allow scheduled, unattended use?
+- Should `#no-summary` be announced to everyone before going live?
+- The 08:30 version is often not final. Trigger later, or post a second version after the meeting?
 
-## 已完成
+## Done
 
-| 項目 | 完成日 |
+| Item | Date |
 | --- | --- |
-| 需求訪談與第一版規格 | 2026-11-12 |
-| 摘要提示詞與 harness（經三輪審查） | 2026-11-12 |
-| 完整管線：抓貼文、匯出、轉圖、發文、去重、回報 | 2026-11-12 |
-| 端到端測試（假 Mattermost 伺服器與假模型） | 2026-11-12 |
-| 建立 repo 與協作文件 | 2026-11-13 |
+| Requirements interview and first spec | 2026-11-12 |
+| Summary prompts and harness (three review rounds) | 2026-11-12 |
+| Full pipeline: fetch, export, render, post, dedupe, report | 2026-11-12 |
+| End-to-end tests (fake Mattermost and fake model) | 2026-11-12 |
+| Repo and collaboration docs | 2026-11-13 |
+| Offline CI on Python 3.10, 3.11, 3.13 with results on `ci-results` | 2026-11-13 |
+| Real Claude CLI run on synthetic decks; prompt tuned from the results | 2026-11-13 |
 
-## 進度紀錄
+## Progress log
 
-最新的寫在最上面。格式：`日期｜誰｜做了什麼`。
+Newest first. Format: `date | who | what`.
 
-- 2026-11-13｜Ray｜認領 T14、T15。
-- 2026-11-13｜Ray｜T12：加入 offline-tests 與 live-check 兩個 workflow、`tools/live_check.py`、`docs/RUNNER_SETUP.md`。
-- 2026-11-13｜Ray｜T3、T4：用真的 Claude CLI 跑合成簡報，整條摘要路徑實測通過；依結果調整提示詞（D17、D18）。
-- 2026-11-13｜Ray｜T13：相容 Python 3.10；另加每份簡報耗時日誌、`--require-test-channel`、Mattermost 連線錯誤代碼。
-- 2026-11-13｜Ray｜認領 T12、T13。
-- 2026-11-13｜Ray｜T1：從 repo 最新版本（f6497a4）在雲端環境跑 `tests/test_pipeline.py`，7 項全過。WSL 上還沒跑過。
-- 2026-11-13｜Ray｜建立 repo，加入需求、進度、決策三份文件與 CLAUDE.md。
-- 2026-11-12｜Ray｜完成第一版程式並通過假伺服器的端到端測試；真實環境尚未驗證。
+- 2026-11-13 | Ray | T15: added `tools/mm_setup.py` and its tests; `docs/SETUP.md` replaces the runner guide and lists the human-only steps.
+- 2026-11-13 | Ray | T14: converted docs, comments, CLI text and CI reports to English (D19). Replaced test fixtures with synthetic ids and rewrote history to remove the old ones (D21).
+- 2026-11-13 | Ray | T12: live-check now has a gate job, so `request=0` sends nothing to the self-hosted runner.
+- 2026-11-13 | Ray | T12: added the offline-tests and live-check workflows and `tools/live_check.py`.
+- 2026-11-13 | Ray | T3, T4: ran the real Claude CLI on synthetic decks end to end; tuned the prompt from the results (D17, D18).
+- 2026-11-13 | Ray | T13: Python 3.10 support; per-deck timing log, `--require-test-channel`, Mattermost error code.
+- 2026-11-13 | Ray | T1: ran `tests/test_pipeline.py` from the repo head in the cloud environment; all checks passed.
+- 2026-11-13 | Ray | Created the repo with requirements, status and decisions docs and CLAUDE.md.
+- 2026-11-12 | Ray | First version of the code; end-to-end tests pass against a fake server; real environment unverified.

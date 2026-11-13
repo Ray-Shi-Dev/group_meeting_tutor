@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""處理狀態（SQLite）。去重以貼文 ID 為準：同一份簡報隔週重貼會重新摘要。"""
+"""Processing state (SQLite). Dedupe is by post id: a deck re-posted the next week is summarized again."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import sqlite3
 import time
 from typing import Optional
 
-# 終態：之後的排程不再處理這則貼文
+# Final states: later runs skip these posts.
 FINAL_STATUSES = ("done", "permission_notified", "skipped_opt_out", "blocked_injection")
 
 

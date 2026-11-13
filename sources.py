@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-簡報來源：從貼文找出簡報、取得 PDF、逐頁轉成 PNG。
+Slide sources: find decks in a post, fetch them as PDF, render each page to PNG.
 
-支援：
-- Google Slides 連結（原生簡報，或上傳到 Drive 的 .pptx）
-- 貼文附件：PDF、PPTX（需 LibreOffice）、HTML（預設關閉，需 Chrome/Chromium）
+Supported:
+- Google Slides links (native decks, or .pptx files uploaded to Drive)
+- Post attachments: PDF, PPTX (needs LibreOffice), HTML (off by default, needs Chrome/Chromium)
 
-轉圖使用 poppler（pdftoppm / pdftotext / pdfinfo），Debian/Ubuntu：apt install poppler-utils
+Rendering uses poppler (pdftoppm / pdftotext / pdfinfo). Debian/Ubuntu: apt install poppler-utils
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# 對原始訊息字串比對，所以藏在 [連結](url) 裡的網址也抓得到
+# Matched against the raw message, so URLs hidden inside [text](url) links are found too.
 GSLIDES_RE = re.compile(r"https?://docs\.google\.com/presentation/d/([A-Za-z0-9_-]{20,})")
 OPT_OUT_TAG = "#no-summary"
 
@@ -30,9 +30,9 @@ ATTACHMENT_EXTS = {"pdf": "附加檔案 (PDF)", "pptx": "附加檔案 (PPTX)", "
 @dataclass
 class DeckSource:
     kind: str        # "gslides" | "attachment"
-    ref: str         # Google 簡報 ID 或 Mattermost file id
-    label: str       # 顯示給讀者與模型看的來源類型
-    ext: str = ""    # 附件副檔名
+    ref: str         # Google deck id or Mattermost file id
+    label: str       # source type shown to readers and to the model (kept in Chinese)
+    ext: str = ""    # attachment extension
 
 
 class DeckFetchError(Exception):
@@ -48,7 +48,7 @@ def is_opted_out(message: str) -> bool:
 
 
 def find_deck_sources(post: Dict[str, Any], enable_html: bool = False) -> List[DeckSource]:
-    """找出一則貼文裡的所有簡報。只含 GitHub、試算表、影片等的貼文會回傳空清單。"""
+    """All decks in one post. Posts with only GitHub links, spreadsheets, videos etc. return []."""
     sources: List[DeckSource] = []
     seen = set()
     for deck_id in GSLIDES_RE.findall(post.get("message") or ""):
@@ -68,7 +68,7 @@ def find_deck_sources(post: Dict[str, Any], enable_html: bool = False) -> List[D
 
 
 # ---------------------------------------------------------------------------
-# 取得 PDF
+# Fetch as PDF
 # ---------------------------------------------------------------------------
 def _http_get(url: str, max_bytes: int, timeout: int = 60) -> Tuple[bytes, str]:
     req = urllib.request.Request(url, headers={"User-Agent": "lab-slide-summarizer/1.0"})
@@ -94,9 +94,9 @@ def fetch_gslides_pdf(
     drive_base: str = "https://drive.google.com/uc",
 ) -> bytes:
     """
-    免登入匯出 PDF。沒開「知道連結的人可檢視」時，Google 會導向登入頁（回傳 HTML），
-    這裡以內容是否為 %PDF 判斷，視為 PERMISSION。
-    上傳到 Drive 的 .pptx 若無法直接匯出，改下載原檔再用 LibreOffice 轉。
+    Export a PDF without logging in. If the deck is not shared by link, Google redirects to a
+    sign-in page (HTML); anything that does not start with %PDF is treated as PERMISSION.
+    For .pptx files uploaded to Drive that cannot be exported directly, download and convert.
     """
     try:
         body, _ = _http_get(f"{export_base}/{deck_id}/export/pdf", max_bytes)
@@ -129,7 +129,7 @@ def _find_binary(names: Tuple[str, ...]) -> Optional[str]:
 
 
 def convert_to_pdf(data: bytes, ext: str, work_dir: Path, timeout: int = 180) -> bytes:
-    """把 PPTX 或 HTML 轉成 PDF。PDF 原樣回傳。"""
+    """Convert PPTX or HTML to PDF. PDFs are returned as is."""
     ext = ext.lower()
     if ext == "pdf":
         if not data.startswith(b"%PDF"):
@@ -168,12 +168,12 @@ def convert_to_pdf(data: bytes, ext: str, work_dir: Path, timeout: int = 180) ->
 
 
 # ---------------------------------------------------------------------------
-# PDF -> PNG + 文字
+# PDF -> PNG + text
 # ---------------------------------------------------------------------------
 def render_pdf(
     pdf_bytes: bytes, out_dir: Path, max_pages: int = 150, width_px: int = 1600
 ) -> Tuple[List[Path], str]:
-    """回傳（第 1..N 頁的 PNG 路徑, 全文文字擷取）。超過 max_pages 的頁面不處理。"""
+    """Return (PNG paths for pages 1..N, extracted text). Pages beyond max_pages are ignored."""
     for tool in ("pdftoppm", "pdftotext", "pdfinfo"):
         if not shutil.which(tool):
             raise DeckFetchError("UNSUPPORTED")
@@ -205,7 +205,7 @@ def render_pdf(
     except (OSError, subprocess.SubprocessError) as exc:
         raise DeckFetchError("CONVERT_FAILED") from exc
 
-    # pdftoppm 的檔名會依總頁數補零（p-1.png、p-01.png、p-001.png），用頁碼數字排序
+    # pdftoppm zero-pads by page count (p-1.png, p-01.png, p-001.png); sort by the page number.
     def _page_no(p: Path) -> int:
         return int(p.stem.rsplit("-", 1)[1])
 

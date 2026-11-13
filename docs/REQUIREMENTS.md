@@ -1,89 +1,89 @@
-# 需求規格
+# Requirements
 
-這份文件是需求的唯一來源。要改需求請直接改這裡，並在該項後面標註日期與原因。
+This file is the only source of requirements. To change one, edit it here and note the date and reason on that row.
 
-**一句話目標**：每週三 group meeting 前，自動替頻道裡每份簡報產生「非本科系也看得懂」的圖文摘要，回覆在原貼文底下，全程不需要人動手。
+**Goal in one sentence**: before each Wednesday group meeting, automatically reply under every slide post in the channel with an illustrated summary that someone outside the field can follow, with no human step.
 
-狀態欄的意思：
+Status values:
 
-- **已實作**：程式寫好，且用假伺服器測試通過。
-- **待實測**：程式寫好，但還沒在真實環境驗證。
-- **未做**：還沒開始。
+- **Done**: implemented and passing the tests against fake servers.
+- **Unverified**: implemented, not yet checked in the real environment.
+- **Not started**
 
-## 觸發與範圍
+## Trigger and scope
 
-| 編號 | 需求 | 狀態 |
+| Id | Requirement | Status |
 | --- | --- | --- |
-| R1 | 每週三 08:30（Asia/Taipei）執行一次，以當下的簡報版本為準 | 已實作（排程未部署） |
-| R2 | 掃描 group meeting 頻道從上週三 12:00 到執行當下的主貼文，不含討論串回覆 | 已實作 |
-| R3 | 整批必須在 30 分鐘內結束，趕在 09:10 meeting 之前 | 已實作 |
-| R4 | 全自動，正式上線後不需要任何人工確認 | 已實作 |
+| R1 | Run once every Wednesday at 08:30 (Asia/Taipei), using the deck as it is at that moment | Done (schedule not deployed) |
+| R2 | Scan top-level posts in the group meeting channel from last Wednesday 12:00 until the run; thread replies are ignored | Done |
+| R3 | The whole batch finishes within 30 minutes, before the 09:10 meeting | Done |
+| R4 | Fully automatic: no human confirmation once live | Done |
 
-## 簡報來源
+## Slide sources
 
-| 編號 | 需求 | 狀態 |
+| Id | Requirement | Status |
 | --- | --- | --- |
-| R5 | 支援 Google Slides 連結，免登入匯出 PDF | 待實測 |
-| R6 | 支援上傳到 Drive 的 .pptx（網址帶 `rtpof=true`） | 待實測 |
-| R7 | 網址藏在 Markdown 超連結文字裡也要抓得到 | 已實作 |
-| R8 | 支援貼文附件：PDF、PPTX | 已實作 |
-| R9 | 支援貼文附件：HTML 簡報 | 已實作，預設關閉（見 D4） |
-| R10 | 一則貼文有多份簡報時，合併成一則回覆 | 已實作 |
+| R5 | Google Slides links, exported to PDF without logging in | Unverified |
+| R6 | .pptx files uploaded to Drive (URL carries `rtpof=true`) | Unverified |
+| R7 | URLs hidden inside Markdown link text are found too | Done |
+| R8 | Post attachments: PDF, PPTX | Done |
+| R9 | Post attachments: HTML decks | Done, off by default (D4) |
+| R10 | Several decks in one post are merged into one reply | Done |
 
-## 要跳過的貼文
+## Posts to skip
 
-| 編號 | 需求 | 狀態 |
+| Id | Requirement | Status |
 | --- | --- | --- |
-| R11 | 沒有簡報連結也沒有簡報附件的貼文：公告、預告下週主題、徵求意見 | 已實作 |
-| R12 | 只含 GitHub、BookStack、Facebook、試算表等非簡報連結 | 已實作 |
-| R13 | 影片附件、系統訊息、Bot 自己的貼文 | 已實作 |
-| R14 | 含 `#no-summary` 的貼文（講者不想被摘要時使用） | 已實作 |
-| R15 | 去重以貼文 ID 為準：同一則不重複回覆；同一份簡報隔週重貼要重新摘要 | 已實作 |
+| R11 | Posts with no deck link and no deck attachment: announcements, previews of next week's topic, requests for feedback | Done |
+| R12 | Posts whose only links are GitHub, wiki, social media, spreadsheets and other non-deck pages | Done |
+| R13 | Video attachments, system messages, the bot's own posts | Done |
+| R14 | Posts containing `#no-summary` (for speakers who opt out) | Done |
+| R15 | Dedupe by post id: never reply twice to one post; the same deck posted again the next week is summarized again | Done |
 
-## 摘要內容
+## Summary content
 
-| 編號 | 需求 | 狀態 |
+| Id | Requirement | Status |
 | --- | --- | --- |
-| R16 | 讀者設定：聰明但完全沒有相關背景的非本科系學生，1 分鐘內讀完 | 已實作（品質待實測） |
-| R17 | 台灣繁體中文；專有名詞保留英文並附白話解釋 | 已實作（品質待實測） |
-| R18 | 目標 300–400 字，上限 400 字；內容少的簡報可以更短，不可灌水 | 已實作（提示詞以 300–360 為目標以留餘裕，見 D17） |
-| R19 | 固定欄位：一句話重點、為什麼重要、聽完能帶走什麼（2–3 點）、核心做法與發現（3–5 點）、名詞小辭典（0–4 個）、可以問講者的問題（2 個） | 已實作 |
-| R20 | 附 2–3 張關鍵投影片截圖，必須是模型實際看過的頁面，避開封面與大綱頁 | 已實作 |
-| R21 | 只根據簡報內容；簡報沒寫的寫「簡報未說明」，不推測 | 已實作（品質待實測） |
-| R22 | 簡報明顯未完成時，在回覆開頭標示「仍在編輯中」 | 已實作 |
-| R23 | 重點是讓聽眾有共鳴、帶走東西，不是抄目錄 | 已實作（品質待實測） |
-| R24 | 適用三種分享：論文導讀、工具實作、經驗分享；比喻只在有助理解時使用 | 已實作（品質待實測） |
-| R25 | 回覆結尾固定標註：AI 自動摘要，依週三 08:30 的簡報版本產生，內容以講者報告為準 | 已實作 |
+| R16 | Reader: a bright student with no background in the topic, done reading in one minute | Done (quality unverified) |
+| R17 | Traditional Chinese as used in Taiwan; technical terms keep their English name plus a plain-language gloss | Done (quality unverified) |
+| R18 | Target 300–400 characters, hard limit 400; shorter is fine for thin decks, padding is not | Done (the prompt aims at 300–360 to leave headroom, D17) |
+| R19 | Fixed fields: one-line gist, why it matters, what you take away (2–3), key methods and findings (3–5), glossary (0–4), questions for the speaker (2) | Done |
+| R20 | 2–3 key slide images, chosen only from pages the model actually saw, never the cover or outline | Done |
+| R21 | Grounded in the deck only; what the deck does not say is reported as "not stated", never guessed | Done (quality unverified) |
+| R22 | A clearly unfinished deck is flagged at the top of the reply | Done (D18) |
+| R23 | The point is resonance and takeaways for the audience, not a table of contents | Done (quality unverified) |
+| R24 | Works for three kinds of talk: paper reading, tool walkthrough, experience sharing; analogies only when they help | Done (quality unverified) |
+| R25 | Every reply ends with a fixed note: AI-generated from the 08:30 version; the speaker's talk is authoritative | Done |
 
-## 發佈與例外
+## Publishing and failures
 
-| 編號 | 需求 | 狀態 |
+| Id | Requirement | Status |
 | --- | --- | --- |
-| R26 | 以 Bot 帳號回覆在原貼文的討論串，一則貼文一則回覆 | 已實作（Bot 帳號未申請） |
-| R27 | 簡報沒開檢視權限時，在討論串回一行請講者開啟，不發摘要 | 已實作 |
-| R28 | 模型或系統失敗時不在頻道發任何東西，改私訊維護者 | 已實作 |
-| R29 | 每次執行後私訊維護者一則統計：成功、失敗、沒開權限各幾則與原因代碼 | 已實作 |
-| R30 | 上線順序：dry-run → 測試頻道試跑兩週 → 正式回覆在討論串 | 進行中 |
+| R26 | A bot account replies in the thread of the original post, one reply per post | Done (bot account not created yet) |
+| R27 | If the deck is not shared, reply with one line asking the speaker to enable link sharing; no summary | Done |
+| R28 | On model or system failure, post nothing in the channel; send the maintainer a direct message | Done |
+| R29 | After each run, send the maintainer a direct message with counts of successes, failures and unshared decks, with reason codes | Done |
+| R30 | Rollout: dry-run → two-week trial in a test channel → replies in the real threads | In progress |
 
-## 成本
+## Cost
 
-| 編號 | 需求 | 狀態 |
+| Id | Requirement | Status |
 | --- | --- | --- |
-| R31 | 不使用按次計費的 API；摘要走既有訂閱的 Claude CLI 非互動模式 | 已實作：CLI 2.1.323 用合成簡報實測通過；實驗室主機上待實測 |
-| R32 | 可選的本地模型備援（Ollama），與主模型共用提示詞與驗證 | 待實測，預設關閉（見 D3） |
+| R31 | No pay-per-call API; summaries use the Claude CLI in non-interactive mode on an existing subscription | Done: verified with CLI 2.1.323 on synthetic decks; unverified on the lab host |
+| R32 | Optional local-model fallback (Ollama) sharing the same prompts and validation | Unverified, off by default (D3) |
 
-## 資安
+## Security
 
-| 編號 | 需求 | 狀態 |
+| Id | Requirement | Status |
 | --- | --- | --- |
-| R33 | 日誌只記貼文 ID、狀態碼、字數與耗時，不記簡報內容 | 已實作 |
-| R34 | Token 不進版控、不寫在設定檔；token 檔權限必須是 600 | 已實作 |
-| R35 | 簡報與貼文裡的文字一律視為資料，不視為給模型的指令 | 已實作 |
-| R36 | 模型在低權限帳號或容器下執行，讀不到 Mattermost token 等機密 | 已實作（部署未做） |
-| R37 | 輸出含疑似憑證時，放棄該則貼文並通知維護者，不重試 | 已實作 |
+| R33 | Logs hold post ids, status codes, character counts and timings only; never slide content | Done |
+| R34 | The token is never in version control or in the config file; the token file must be chmod 600 | Done |
+| R35 | Text inside slides and posts is data, never instructions to the model | Done |
+| R36 | The model runs in a low-privilege account or container that cannot read secrets such as the Mattermost token | Done (deployment not done) |
+| R37 | If output looks like a leaked credential, drop that post and notify the maintainer; no retry | Done |
 
-## 不在範圍內
+## Out of scope
 
-- 08:30 之後才貼出或修改的簡報。
-- 在討論串裡回答追問。
-- 每週彙整或長期存檔。
+- Decks posted or changed after 08:30.
+- Answering follow-up questions in the thread.
+- Weekly digests or long-term archiving.

@@ -1,104 +1,92 @@
-# Group Meeting 簡報自動摘要 Agent
+# Group Meeting Slide Summary Agent
 
-每週三 08:30 掃描 Mattermost 頻道，找出本週分享的簡報，產生「非本科系也看得懂」的圖文摘要，回覆在原貼文的討論串。
+Every Wednesday at 08:30 the agent scans a Mattermost channel, finds the slide decks shared for that week's group meeting, and replies under each post with an illustrated summary that someone outside the field can follow.
 
-## 協作文件
+The summaries and everything posted to Mattermost are in Traditional Chinese. The repo itself is in English.
 
-兩個人各自用 Claude 開發，以下三份文件是對齊進度的依據。`CLAUDE.md` 會要求 Claude 每次工作前先讀、結束前更新。
+## Working together
 
-| 文件 | 內容 |
+Two people develop this, each with their own Claude. These files keep both sides aligned; `CLAUDE.md` tells Claude to read them before working and update them afterwards.
+
+| File | Contents |
 | --- | --- |
-| [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) | 所有需求與目前狀態 |
-| [`docs/STATUS.md`](docs/STATUS.md) | 誰在做什麼、待辦、進度紀錄 |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | 已經決定的設計取捨 |
+| [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) | Every requirement and its current state |
+| [`docs/STATUS.md`](docs/STATUS.md) | Who is doing what, the task list, the progress log |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Design decisions that are already settled |
+| [`docs/SETUP.md`](docs/SETUP.md) | One-time setup on the machine that holds the token |
 
-## 需求
+## Requirements
 
-- Python 3.10 以上（只用標準函式庫；3.10 另需 `sudo apt install python3-tomli`）
-- poppler-utils：`sudo apt install poppler-utils`
-- Claude Code CLI，已用訂閱帳號登入
-- 選用：LibreOffice（PPTX 附件）、Chromium（HTML 附件）、Ollama（本地備援）
+- Python 3.10 or newer (standard library only; 3.10 also needs `sudo apt install python3-tomli`)
+- poppler-utils: `sudo apt install poppler-utils`
+- Claude Code CLI, signed in with a subscription account
+- Optional: LibreOffice (PPTX attachments), Chromium (HTML attachments), Ollama (local fallback)
 
-## 檔案
+## Files
 
-| 檔案 | 用途 |
+| File | Purpose |
 | --- | --- |
-| `main.py` | 主流程：抓貼文、去重、發文、回報 |
-| `sources.py` | 找出簡報、匯出 PDF、轉成逐頁 PNG |
-| `summary_harness.py` | 提示詞、呼叫模型、驗證與重試 |
-| `mattermost.py` | Mattermost API 用戶端 |
-| `store.py` | SQLite 處理狀態 |
-| `config.example.toml` | 設定範本 |
-| `tests/test_pipeline.py` | 端到端測試（假伺服器，不需網路） |
-| `tools/live_check.py` | 真實環境檢查，輸出不含內容的報告 |
-| `.github/workflows/` | 自動測試；結果寫到 `ci-results` 分支 |
-| `docs/RUNNER_SETUP.md` | 自架 runner 的一次性設定 |
+| `main.py` | Pipeline: fetch posts, dedupe, post replies, report |
+| `sources.py` | Find decks, export to PDF, render pages to PNG |
+| `summary_harness.py` | Prompts, model calls, validation and retries |
+| `mattermost.py` | Mattermost API client |
+| `store.py` | Processing state in SQLite |
+| `config.example.toml` | Config template |
+| `tools/mm_setup.py` | One-time Mattermost setup: test channel, bot, token file, config |
+| `tools/live_check.py` | Live environment check with a content-free report |
+| `tests/` | End-to-end tests against fake servers (no network needed) |
+| `.github/workflows/` | Automated tests; results go to the `ci-results` branch |
 
-## 設定
+## Getting started
 
-1. `cp config.example.toml config.toml`，填入 `base_url`、`channel_id`、`test_channel_id`、`maintainer_username`。
-2. 請 Mattermost 管理員建立 Bot 帳號，把 Bot 加進正式頻道和測試頻道。
-3. 把 Bot token 存成檔案並 `chmod 600`，路徑填到 `token_file`；或用環境變數 `MM_BOT_TOKEN`。
-4. 隔離方式二擇一：
-   - 整支程式用一個專用低權限帳號跑：`allow_direct = true`、`isolation_user = ""`。設定最簡單，建議先用這個。
-   - 主程式和 Claude 分開帳號：填 `isolation_user`，並在 sudoers 放行，主程式帳號要加入該帳號的群組。
-
-## 建議的測試順序
-
-每一步都過了再往下。
+Follow [`docs/SETUP.md`](docs/SETUP.md). In short:
 
 ```bash
-# 0. 本機邏輯測試（不碰任何外部服務）
-python3 tests/test_pipeline.py
-
-# 1. 測 Mattermost 與 Google 匯出，不呼叫模型、不發文
-python3 main.py --config config.toml --dry-run --fake-llm --since-hours 720
-#    看 dryrun_out/：每則簡報貼文應有一個 .md 和幾張 PNG；_report.md 列出沒開權限的
-
-# 2. 確認 Claude CLI 參數（summary_harness.py 用到這三個）
-claude -p --system-prompt '只輸出 {"ok": true}' --allowedTools Read --output-format json <<< "輸出 JSON"
-claude -p --system-prompt '只輸出 {"ok": true}' --tools "" --output-format json <<< "輸出 JSON"
-
-# 3. 用真的模型跑，仍不發文；看摘要品質與日誌中的耗時
-python3 main.py --config config.toml --dry-run --since-hours 720
-
-# 4. 發到測試頻道（reply_mode = "test_channel"）
-python3 main.py --config config.toml --since-hours 168
-
-# 5. 試跑兩週沒問題後，把 reply_mode 改成 "thread" 正式上線
+sudo apt install -y git poppler-utils python3-tomli
+git clone https://github.com/Ray-Shi-Dev/group_meeting_tutor.git && cd group_meeting_tutor
+python3 tools/mm_setup.py          # asks for the channel URL and your token, sets up the rest
+python3 tools/live_check.py --config ~/.config/lab-summarizer/config.toml --mode dryrun-fake --since-hours 1440 --result -
 ```
 
-第 3 步請記下一份 30 頁左右簡報的實際耗時，把 `vision_timeout_sec` 設成兩倍。
+## Rollout order
 
-## 排程
+Move to the next step only when the previous one works.
+
+| Step | Command | What it proves |
+| --- | --- | --- |
+| 0 | `python3 tests/test_pipeline.py` | The logic works (no external services) |
+| 1 | `tools/live_check.py --mode dryrun-fake` | Mattermost can be read and decks can be exported; nothing is posted |
+| 2 | `tools/live_check.py --mode dryrun-real` | Real summaries, kept on the machine for a human to read |
+| 3 | `tools/live_check.py --mode test-channel` | The full flow, posting to the test channel only |
+| 4 | Set `reply_mode = "thread"` after a two-week trial | Go live |
+
+## Schedule
 
 ```cron
 CRON_TZ=Asia/Taipei
-30 8 * * 3  cd /opt/lab-summarizer && /usr/bin/python3 main.py --config config.toml >> /var/log/lab-summarizer.log 2>&1
+30 8 * * 3  cd /opt/lab-summarizer && /usr/bin/python3 main.py --config /path/to/config.toml >> /var/log/lab-summarizer.log 2>&1
 ```
 
-## 行為摘要
+## Behavior
 
-- **掃描範圍**：上週三 12:00 到執行當下的主貼文。
-- **算作簡報**：Google Slides 連結（含藏在 Markdown 超連結裡的），以及 PDF、PPTX 附件。
-- **會跳過**：公告、預告、只有 GitHub 或試算表連結、影片附件、系統訊息、Bot 自己的貼文、含 `#no-summary` 的貼文。
-- **去重**：以貼文 ID 為準。同一份簡報隔週重貼會重新摘要。
-- **沒開權限**：在討論串回一行請講者開啟檢視權限，之後不再處理該則。
-- **模型失敗**：不在頻道發任何東西，私訊維護者。
-- **執行結果**：每次有動作都會私訊維護者一則統計，含失敗原因代碼。
-- **日誌**：只有貼文 ID、狀態碼、字數與耗時，不含簡報內容。
+- **Scan window**: top-level posts from last Wednesday 12:00 until the run.
+- **Counts as a deck**: Google Slides links (including ones hidden inside Markdown links) and PDF or PPTX attachments.
+- **Skipped**: announcements, previews of next week's topic, posts with only GitHub or spreadsheet links, video attachments, system messages, the bot's own posts, and posts containing `#no-summary`.
+- **Dedupe**: by post id. The same deck posted again the next week is summarized again.
+- **Deck not shared**: one line in the thread asks the speaker to enable link sharing; the post is not processed again.
+- **Model failure**: nothing is posted in the channel; the maintainer gets a direct message.
+- **Run report**: after every run that did something, the maintainer gets a direct message with counts and failure codes.
+- **Logs**: post ids, status codes, character counts and timings only. Never slide content.
 
-## 尚未在真實環境驗證
+## Not yet verified in the real environment
 
-以下幾項在開發時無法實測，第一次跑請特別留意：
+1. Mattermost reads, uploads and posting (tested against a fake server only).
+2. Google Slides export without login (`/export/pdf`) for native decks and uploaded .pptx files.
+3. Summary quality and timing on real decks (the Claude CLI path has only been run on synthetic English decks).
+4. The Ollama fallback (off by default).
 
-1. Mattermost 的讀取、上傳與發文（目前只對假伺服器測過）。
-2. Google Slides 免登入匯出 PDF（`/export/pdf`）對原生簡報與上傳的 .pptx 是否都可用。
-3. 真實簡報的摘要品質與耗時（目前只用合成的英文測試簡報跑過 Claude CLI）。
-4. Ollama 備援（預設關閉）。
+## Known limits
 
-## 已知限制
-
-- HTML 附件預設關閉。開啟後會用無頭瀏覽器執行附件內的 JavaScript，請先評估風險。
-- 簡報超過 32 頁時 Claude 只看抽樣的 32 頁（前兩頁、最後兩頁一定保留）。
-- Claude 的登入憑證與 Read 工具在同一個帳號下。輸出有做憑證特徵掃描，但無法擋住刻意編碼的外洩，所以執行帳號裡不要放其他機密。
+- HTML attachments are off by default. Turning them on runs the attachment's JavaScript in a headless browser; assess the risk first.
+- For decks over 32 pages Claude sees a sample of 32 (the first two and last two pages are always kept).
+- Claude's login credentials live in the same account as its Read tool. Output is scanned for credential patterns, which will not stop a deliberately encoded leak, so keep other secrets out of that account.

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Mattermost REST API v4 的最小用戶端（只用標準函式庫）。"""
+"""Minimal Mattermost REST API v4 client (standard library only)."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class MattermostClient:
         self._token = token
         self.timeout = timeout
 
-    # ---------- 底層 ----------
+    # ---------- low level ----------
     def _request(
         self,
         method: str,
@@ -65,16 +65,16 @@ class MattermostClient:
         except urllib.error.URLError as exc:
             raise MattermostError(0, "unreachable") from exc
 
-    # ---------- 使用者 ----------
+    # ---------- users ----------
     def me(self) -> Dict[str, Any]:
         return self._request("GET", "/users/me")
 
     def user_by_username(self, username: str) -> Dict[str, Any]:
         return self._request("GET", f"/users/username/{urllib.parse.quote(username.lstrip('@'))}")
 
-    # ---------- 貼文 ----------
+    # ---------- posts ----------
     def channel_posts_since(self, channel_id: str, since_ms: int) -> List[Dict[str, Any]]:
-        """回傳 since_ms 之後有變動的貼文，依建立時間由舊到新排序。"""
+        """Posts changed after since_ms, sorted oldest first by creation time."""
         res = self._request("GET", f"/channels/{channel_id}/posts?since={int(since_ms)}")
         posts = list((res or {}).get("posts", {}).values())
         posts.sort(key=lambda p: p.get("create_at", 0))
@@ -96,7 +96,7 @@ class MattermostClient:
     def permalink(self, post_id: str) -> str:
         return f"{self.base_url}/_redirect/pl/{post_id}"
 
-    # ---------- 檔案 ----------
+    # ---------- files ----------
     def file_info(self, file_id: str) -> Dict[str, Any]:
         return self._request("GET", f"/files/{file_id}/info")
 
@@ -104,7 +104,7 @@ class MattermostClient:
         return self._request("GET", f"/files/{file_id}", raw=True, max_bytes=max_bytes)
 
     def upload_files(self, channel_id: str, paths: List[Path]) -> List[str]:
-        """上傳檔案到頻道，回傳 file id 清單（順序與輸入相同）。"""
+        """Upload files to a channel; returns file ids in input order."""
         ids: List[str] = []
         for path in paths:
             boundary = uuid.uuid4().hex

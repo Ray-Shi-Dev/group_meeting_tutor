@@ -1,7 +1,7 @@
 name: offline-tests
 
-# 每次推送都在 GitHub 代管的機器上跑端到端測試（假伺服器，不需要任何機密）。
-# 結果寫到 ci-results 分支的 results/offline.md，讓雙方的 Claude 用 git 就讀得到。
+# Runs the end-to-end test on GitHub-hosted machines on every push (fake server, no secrets needed).
+# The result goes to results/offline.md on the ci-results branch so both Claudes can read it with git.
 
 on:
   push:
@@ -22,21 +22,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: 安裝工具
+      - name: Install tools
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq poppler-utils
           pip install -q reportlab tomli
-      - name: 端到端測試
+      - name: End-to-end test
         id: run
         run: |
           set -o pipefail
           python tests/test_pipeline.py 2>&1 | tee test.log
-      - name: 整理結果
+          python tests/test_mm_setup.py 2>&1 | tee -a test.log
+      - name: Collect result
         if: always()
         run: |
           {
-            echo "### Python ${{ matrix.python }}：${{ steps.run.outcome }}"
+            echo "### Python ${{ matrix.python }}: ${{ steps.run.outcome }}"
             echo '```'
             grep -v '^\[20' test.log | tail -n 25 || true
             echo '```'
@@ -59,14 +60,14 @@ jobs:
         with:
           path: parts
           merge-multiple: true
-      - name: 寫回 ci-results
+      - name: Publish to ci-results
         run: |
           {
-            echo "# 離線測試結果"
+            echo "# Offline test result"
             echo
-            echo "- commit：${GITHUB_SHA:0:12}"
-            echo "- 時間（UTC）：$(date -u '+%Y-%m-%d %H:%M')"
-            echo "- 整體：${{ needs.test.result }}"
+            echo "- Commit: ${GITHUB_SHA:0:12}"
+            echo "- Time (UTC): $(date -u '+%Y-%m-%d %H:%M')"
+            echo "- Overall: ${{ needs.test.result }}"
             echo
             cat parts/offline-*.md
           } > offline.md

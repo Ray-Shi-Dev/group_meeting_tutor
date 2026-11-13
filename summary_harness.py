@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-實驗室 Group Meeting 簡報自動摘要 Harness (v3.1 補丁版)
+Group Meeting slide summary harness.
 
-主模型：Claude CLI 非互動模式（既有訂閱）；備援：本地 Ollama 視覺模型。
+Primary model: Claude CLI in non-interactive mode (existing subscription). Optional fallback: local Ollama.
 
-v3 -> v3.1 的修改（對應第三輪審查）：
-  1. ENV_WHITELIST 的 " SSL_CERT_DIR" 錯字修正。
-  2. 總時限改為「整批共用」：summarize_single_deck 必須傳入 deadline，
-     由呼叫端每次排程用 make_run_deadline() 算一次。
-  3. 隔離方式必須明確指定：isolation_user 或 allow_direct=True，兩者皆無直接報錯。
-  4. 啟動自檢實際測試 sudoers 是否放行；sudo 加 -H；claude_bin 必須是絕對路徑。
-  5. SummaryOutput.degraded 標示用了備援或救援版本，外層據此私訊維護者。
-  6. 視覺階段與純文字階段分開設定逾時（視覺階段預設值需以 Dry-run 實測調整）。
-  7. 交換目錄權限收緊為 0750 / 0640 + 專屬群組。
-  8. 掃到疑似憑證時直接放棄該份簡報（SuspectedInjectionError），不重試、不降級。
-  9. 字數過短不再觸發無圖擴充重試（過短只記錄，不視為錯誤）。
+Design notes:
+  - Code fetches, validates, formats and appends the footer; the model only writes the summary.
+  - One shared deadline per run: callers compute it once with make_run_deadline() and pass it
+    to every summarize_single_deck() call.
+  - Isolation must be explicit: isolation_user or allow_direct=True, otherwise startup fails.
+  - Over-length output is fixed by sending the previous JSON back as text (no images re-read).
+  - A schema-valid candidate is never discarded: on a later timeout it is returned as is.
+  - Output that looks like a leaked credential aborts the deck (SuspectedInjectionError): no retry,
+    no fallback.
+  - Prompts, validation feedback sent to the model, and everything posted to Mattermost are in
+    Traditional Chinese by requirement (R17). Everything else in this file is English.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 # ============================================================================
-# 1. 日誌（只記狀態碼與脫敏診斷，不記簡報內容）
+# 1. Logging (status codes and sanitized diagnostics only; never slide content)
 # ============================================================================
 logger = logging.getLogger("lab_slide_summarizer")
 logger.setLevel(logging.INFO)
@@ -61,7 +61,7 @@ CREDENTIAL_LEAK_PATTERNS = [
     re.compile(r"/home/[a-zA-Z0-9_\-]+/\.claude"),
 ]
 
-# Mattermost 單則貼文附件上限（預設值請對照實驗室伺服器設定）
+# Attachment limit per Mattermost post (check against the server setting)
 MAX_ATTACHMENTS_PER_POST = 10
 
 
@@ -76,14 +76,14 @@ def sanitize_stderr_for_log(stderr_text: str, max_len: int = 180) -> str:
 
 
 def make_run_deadline(budget_sec: int = 1800) -> float:
-    """每次排程啟動時呼叫一次，整批簡報共用同一個截止時間（08:30 啟動 -> 09:00 收斂）。"""
+    """Call once per scheduled run; every deck in the batch shares this deadline (08:30 start -> 09:00)."""
     return time.monotonic() + budget_sec
 
 
 # ============================================================================
-# 2. Prompt 模板
+# 2. Prompt templates (Traditional Chinese by requirement)
 # ============================================================================
-SYSTEM_PROMPT = """你是一位「跨領域技術傳播與知識轉譯專家」，服務於成功大學資訊工程學系某實驗室的每週三 Group Meeting。
+SYSTEM_PROMPT = """你是一位「跨領域技術傳播與知識轉譯專家」，服務於某大學資訊工程實驗室的每週三 Group Meeting。
 
 ### 核心理念與目標讀者
 - **指導教授的核心理念**：分享的重點是讓聽眾產生共鳴、帶走東西，而不是講者自己講得開心。
@@ -173,16 +173,16 @@ TEXT_REFINEMENT_PROMPT_TEMPLATE = """以下是針對一份簡報（總頁數 {to
 
 
 # ============================================================================
-# 3. 資料結構與例外
+# 3. Data structures and exceptions
 # ============================================================================
 @dataclass
 class SlideDeckInput:
     post_id: str
-    deck_index: int                  # 同一貼文中的第幾份簡報（從 1 起算）
-    source_label: str                # 如 "Google Slides"、"附加檔案 (HTML)"
+    deck_index: int                  # index of the deck within its post (1-based)
+    source_label: str                # e.g. "Google Slides", "附加檔案 (HTML)"
     post_message: str
     total_pages: int
-    page_png_paths: List[Path]       # 第 1..N 頁的 PNG
+    page_png_paths: List[Path]       # PNGs for pages 1..N
     speaker_notes: str = ""
 
 
@@ -201,20 +201,20 @@ class SummaryOutput:
 
     @property
     def degraded(self) -> bool:
-        """True 表示不是 Claude 一次完整通過（用了備援、救援或最接近版本），外層應私訊維護者。"""
+        """True when this was not a clean first-provider pass (fallback, rescued or nearest); DM the maintainer."""
         return self.provider_used != "claude-cli"
 
 
 class SandboxConfigurationError(RuntimeError):
-    """隔離環境沒設好。一律中止，不降級、不裸跑。"""
+    """Isolation is not set up correctly. Always abort; never degrade or run unsandboxed."""
 
 
 class ProviderUnavailableError(Exception):
-    """模型不可用（逾時、非零退出、連不上、撞到總時限）。"""
+    """Model unavailable (timeout, non-zero exit, unreachable, or the shared deadline was hit)."""
 
 
 class SummaryGenerationError(Exception):
-    """所有模型都失敗。外層捕獲後私訊維護者，不在頻道發文。"""
+    """Every provider failed. The caller DMs the maintainer; nothing is posted in the channel."""
 
     def __init__(self, post_id: str, deck_index: int, reason_code: str):
         self.post_id = post_id
@@ -224,14 +224,14 @@ class SummaryGenerationError(Exception):
 
 
 class SuspectedInjectionError(SummaryGenerationError):
-    """輸出含疑似憑證或敏感路徑。放棄該份簡報並通知維護者，不重試、不降級。"""
+    """Output contains a suspected credential or sensitive path. Drop the deck and notify; no retry."""
 
     def __init__(self, post_id: str, deck_index: int):
         super().__init__(post_id, deck_index, "SUSPECTED_INJECTION_CREDENTIAL_PATTERN")
 
 
 # ============================================================================
-# 4. 字數、JSON 擷取、驗證
+# 4. Character counting, JSON extraction, validation
 # ============================================================================
 FIXED_FOOTER = "AI 自動摘要，依週三 08:30 的簡報版本產生，內容以講者報告為準"
 
@@ -242,7 +242,7 @@ PERMISSION_REMINDER_REPLY = (
 
 
 def count_readable_chars(data: Dict[str, Any]) -> int:
-    """中文字每字計 1、英文單詞每詞計 1，忽略空白與標點。"""
+    """One per CJK character, one per English word; whitespace and punctuation are ignored."""
     segments: List[str] = [str(data.get("one_liner", "")), str(data.get("why_it_matters", ""))]
     segments.extend(str(x) for x in data.get("takeaways", []) if isinstance(x, str))
     segments.extend(str(x) for x in data.get("key_points", []) if isinstance(x, str))
@@ -263,10 +263,10 @@ def contains_credential_leak(payload: Dict[str, Any]) -> bool:
 
 
 def extract_json_object(raw_text: str) -> Dict[str, Any]:
-    """擷取摘要 JSON。相容 Claude CLI 的 {"result": "..."} 外層與純文字輸出。"""
+    """Extract the summary JSON. Accepts the Claude CLI {"result": "..."} envelope or plain text."""
     cleaned = raw_text.strip()
     if not cleaned:
-        raise ValueError("模型回傳空字串")
+        raise ValueError("empty model output")
     try:
         outer = json.loads(cleaned)
         if isinstance(outer, dict):
@@ -282,10 +282,10 @@ def extract_json_object(raw_text: str) -> Dict[str, Any]:
         cleaned = re.sub(r"\s*```$", "", cleaned)
     start, end = cleaned.find("{"), cleaned.rfind("}")
     if start == -1 or end <= start:
-        raise ValueError("輸出中找不到 JSON 物件")
+        raise ValueError("no JSON object in output")
     obj = json.loads(cleaned[start : end + 1])
     if not isinstance(obj, dict):
-        raise ValueError("輸出不是 JSON 物件")
+        raise ValueError("output is not a JSON object")
     return obj
 
 
@@ -298,7 +298,7 @@ class ValidationResult:
     char_count: int
     char_distance: int
     leak_detected: bool = False
-    too_short: bool = False          # 只記錄，不觸發重試
+    too_short: bool = False          # logged only; never triggers a retry
 
     @property
     def is_perfect(self) -> bool:
@@ -388,13 +388,13 @@ def validate_summary_payload(
     if count > max_chars:
         distance = count - max_chars
         soft.append(f"總字數超標：目前 {count} 字，請刪減約 {distance} 字，使總字數不超過 {max_chars} 字")
-    too_short = count < effective_min  # 過短不重試：沒有圖片時要求擴充只會灌水
+    too_short = count < effective_min  # no retry: without images, asking for more text only adds padding
 
     return ValidationResult(True, not soft, [], soft, count, distance, too_short=too_short)
 
 
 # ============================================================================
-# 5. 頁面抽樣（保留前 2 頁與最後 2 頁）
+# 5. Page sampling (always keeps the first two and last two pages)
 # ============================================================================
 def select_pages_for_vision(page_png_paths: List[Path], max_vision_pages: int = 32) -> List[Tuple[int, Path]]:
     total = len(page_png_paths)
@@ -430,23 +430,23 @@ class SlideSummaryHarness:
         claude_bin: str = "claude",
         claude_max_vision_pages: int = 32,
         ollama_url: str = "http://127.0.0.1:11434/api/chat",
-        ollama_model: str = "qwen2.5vl:7b",      # 上線前用 `ollama list` 確認 tag 存在
+        ollama_model: str = "qwen2.5vl:7b",      # confirm the tag with `ollama list`
         ollama_max_vision_pages: int = 8,
-        enable_ollama_fallback: bool = False,    # 預設關閉：Claude 失敗就跳過並通知維護者
+        enable_ollama_fallback: bool = False,    # off by default: if Claude fails, skip and notify
         max_retries: int = 3,
-        vision_timeout_sec: int = 420,           # 暫定值：Dry-run 量到的實際耗時 x2
+        vision_timeout_sec: int = 420,           # measured ~70 s for 30 synthetic pages; keep headroom
         text_timeout_sec: int = 90,
         isolation_user: Optional[str] = None,
         allow_direct: bool = False,
         exchange_root: str = "/var/tmp",
     ):
         """
-        隔離方式必須二擇一：
-        - isolation_user="claude-runner"：主程式握有 Mattermost token 等機密，
-          CLI 以 `sudo -n -H -u claude-runner` 在低權限帳號下執行。claude_bin 必須是絕對路徑，
-          且主程式帳號需屬於該帳號的主要群組（用來交換簡報圖片）。
-        - allow_direct=True：整支程式本身就跑在專用低權限帳號或容器裡。
-        兩者皆未指定時直接拋出 SandboxConfigurationError。
+        Exactly one isolation mode is required:
+        - isolation_user="claude-runner": the main process holds secrets such as the Mattermost token;
+          the CLI runs under a low-privilege account via `sudo -n -H -u claude-runner`. claude_bin must be
+          absolute, and the main account must belong to that account's primary group (to hand over images).
+        - allow_direct=True: the whole program already runs in a dedicated low-privilege account or container.
+        With neither set, SandboxConfigurationError is raised.
         """
         self.system_prompt = system_prompt
         self.user_prompt_template = user_prompt_template
@@ -466,25 +466,25 @@ class SlideSummaryHarness:
         self._exchange_gid: Optional[int] = None
         self._verify_isolation_setup()
 
-    # ---------- 啟動自檢 ----------
+    # ---------- startup self-check ----------
     def _verify_isolation_setup(self) -> None:
         if self.isolation_user and self.allow_direct:
-            raise SandboxConfigurationError("isolation_user 與 allow_direct 只能擇一")
+            raise SandboxConfigurationError("isolation_user and allow_direct are mutually exclusive")
         if not self.isolation_user:
             if not self.allow_direct:
                 raise SandboxConfigurationError(
-                    "未指定隔離方式：請傳入 isolation_user，或在專用帳號/容器下明確設定 allow_direct=True"
+                    "No isolation mode: pass isolation_user, or set allow_direct=True in a dedicated account/container"
                 )
             return
 
         if not os.path.isabs(self.claude_bin):
-            raise SandboxConfigurationError("使用 isolation_user 時 claude_bin 必須是絕對路徑（sudo 會重設 PATH）")
+            raise SandboxConfigurationError("claude_bin must be an absolute path with isolation_user (sudo resets PATH)")
         if shutil.which("sudo") is None:
-            raise SandboxConfigurationError("找不到 sudo")
+            raise SandboxConfigurationError("sudo not found")
         try:
             pw = pwd.getpwnam(self.isolation_user)
         except KeyError as exc:
-            raise SandboxConfigurationError(f"隔離帳號 `{self.isolation_user}` 不存在") from exc
+            raise SandboxConfigurationError(f"isolation account `{self.isolation_user}` does not exist") from exc
         self._exchange_gid = pw.pw_gid
 
         try:
@@ -493,17 +493,17 @@ class SlideSummaryHarness:
                 capture_output=True, text=True, timeout=15, check=False,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise SandboxConfigurationError("無法執行 sudo 權限檢查") from exc
+            raise SandboxConfigurationError("could not run the sudo permission check") from exc
         if check.returncode != 0:
             raise SandboxConfigurationError(
-                f"sudoers 未放行以 `{self.isolation_user}` 免密碼執行 {self.claude_bin}"
+                f"sudoers does not allow running {self.claude_bin} as `{self.isolation_user}` without a password"
             )
 
         if self._exchange_gid not in os.getgroups() and os.getegid() != self._exchange_gid and os.geteuid() != 0:
             group_name = grp.getgrgid(self._exchange_gid).gr_name
-            raise SandboxConfigurationError(f"主程式帳號不屬於群組 `{group_name}`，無法建立交換目錄")
+            raise SandboxConfigurationError(f"main account is not in group `{group_name}`; cannot create the exchange dir")
 
-    # ---------- 小工具 ----------
+    # ---------- helpers ----------
     def _remaining_timeout(self, deadline_monotonic: float, vision: bool) -> int:
         rem = int(deadline_monotonic - time.monotonic())
         if rem <= 10:
@@ -518,7 +518,7 @@ class SlideSummaryHarness:
         return env
 
     def _secure_path(self, path: str, is_dir: bool) -> None:
-        """交換目錄 0750、檔案 0640、群組為隔離帳號的群組；直接模式則只有自己能讀。"""
+        """Exchange dir 0750, files 0640, group = isolation account's group; direct mode: owner only."""
         try:
             if self.isolation_user:
                 os.chown(path, -1, self._exchange_gid)  # type: ignore[arg-type]
@@ -526,7 +526,7 @@ class SlideSummaryHarness:
             else:
                 os.chmod(path, 0o700 if is_dir else 0o600)
         except OSError as exc:
-            raise SandboxConfigurationError(f"無法設定交換目錄權限（{type(exc).__name__}）") from exc
+            raise SandboxConfigurationError(f"cannot set exchange dir permissions ({type(exc).__name__})") from exc
 
     def _build_initial_vision_prompt(
         self, deck: SlideDeckInput, sampled_meta: List[Tuple[int, str]], retry_errors: List[str]
@@ -562,8 +562,8 @@ class SlideSummaryHarness:
         self, user_prompt: str, sampled_pages: Optional[List[Tuple[int, Path]]], timeout_sec: int
     ) -> str:
         """
-        注意：`--allowedTools`、`--tools ""`、`--output-format json` 的實際行為
-        請在主機上以 Smoke Test Step 1 對照官方文件確認後再上線。
+        The flags `--allowedTools`, `--tools ""` and `--output-format json` were verified against
+        Claude CLI 2.1.323; tools/live_check.py re-checks them on the machine that runs this.
         """
         with tempfile.TemporaryDirectory(prefix="lab_slides_", dir=self.exchange_root) as tmp_dir:
             self._secure_path(tmp_dir, is_dir=True)
@@ -636,7 +636,7 @@ class SlideSummaryHarness:
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise ProviderUnavailableError("OLLAMA_UNREACHABLE_OR_TIMEOUT") from exc
 
-    # ---------- 重試迴圈 ----------
+    # ---------- retry loop ----------
     def _run_provider_with_retries(
         self, provider_name: str, caller_fn: CallerFn, deck: SlideDeckInput,
         max_vision_pages: int, deadline_monotonic: float,
@@ -703,7 +703,7 @@ class SlideSummaryHarness:
                     )
                     return _rescue("rescued")
                 raise
-            except Exception as exc:  # JSON 解析失敗等
+            except Exception as exc:  # JSON parse failures and the like
                 last_payload = None
                 last_errors = [f"前次輸出無法解析為 JSON（{type(exc).__name__}），請只輸出單一 JSON 物件"]
                 logger.warning(
@@ -746,9 +746,9 @@ class SlideSummaryHarness:
 
     def summarize_single_deck(self, deck: SlideDeckInput, deadline_monotonic: float) -> SummaryOutput:
         """
-        deadline_monotonic 為必填：每次排程開始時用 make_run_deadline() 算一次，
-        同一批的所有簡報共用，才能保證整批在 meeting 前結束。
-        SuspectedInjectionError 與 SandboxConfigurationError 會直接往外拋，不降級。
+        deadline_monotonic is required: compute it once per run with make_run_deadline() and share it
+        across all decks so the whole batch finishes before the meeting.
+        SuspectedInjectionError and SandboxConfigurationError propagate; they never trigger a fallback.
         """
         for provider_name, caller_fn, max_pages in self._providers():
             try:
@@ -766,12 +766,12 @@ class SlideSummaryHarness:
 
 
 # ============================================================================
-# 7. Mattermost 回覆排版
+# 7. Mattermost reply formatting (Traditional Chinese by requirement)
 # ============================================================================
 def format_combined_mattermost_reply(
     summaries: List[Tuple[SlideDeckInput, SummaryOutput]]
 ) -> Tuple[str, List[Path]]:
-    """同一則貼文的 1 份或多份簡報合併成一則回覆，並回傳要上傳的關鍵頁 PNG。"""
+    """Merge one or more deck summaries of a post into one reply; also returns key-page PNGs to upload."""
     blocks: List[str] = []
     uploads: List[Path] = []
     multi = len(summaries) > 1

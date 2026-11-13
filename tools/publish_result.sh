@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# 把一個結果檔寫進 ci-results 分支的 results/ 目錄。
-# 用法：tools/publish_result.sh <來源檔> <目的檔名>
-# 只在 GitHub Actions 裡執行；結果檔必須不含 token、網址或簡報內容。
+# Write one result file into results/ on the ci-results branch.
+# Usage: tools/publish_result.sh <source file> <destination name>
+# Runs only inside GitHub Actions. The file must not contain tokens, URLs or slide content.
 set -euo pipefail
 
 src="$1"
@@ -25,7 +25,7 @@ mkdir -p "$work/results"
 cp "$src" "$work/results/$name"
 git -C "$work" add results
 if git -C "$work" diff --cached --quiet; then
-  echo "結果沒有變化，不提交"
+  echo "No change in results; nothing to commit"
 else
   git -C "$work" commit -q -m "results: $name @ ${GITHUB_SHA:0:7}"
   for attempt in 1 2 3; do

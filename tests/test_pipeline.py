@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-端到端測試：假的 Mattermost 伺服器 + 假的 Google 匯出 + 假模型。
-不需要網路、Claude CLI 或真的 Mattermost。
+End-to-end test: fake Mattermost server + fake Google export + fake model.
+Needs no network, no Claude CLI and no real Mattermost. All ids and messages are synthetic.
 
     python3 tests/test_pipeline.py
 
-需要 poppler-utils 與 reportlab（只有測試用到 reportlab，用來產生測試 PDF）。
-有裝 python-pptx 與 LibreOffice 時會多測 PPTX 附件。
+Needs poppler-utils and reportlab (reportlab is only used here, to build test PDFs).
+PPTX attachments are also tested when python-pptx and LibreOffice are installed.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def make_pptx(n_slides: int) -> bytes | None:
 
 
 # ---------------------------------------------------------------------------
-# 假的 Mattermost
+# Fake Mattermost
 # ---------------------------------------------------------------------------
 class FakeMM:
     def __init__(self):
@@ -145,7 +145,7 @@ def make_handler(fake: FakeMM):
 
 
 # ---------------------------------------------------------------------------
-# 測試
+# Tests
 # ---------------------------------------------------------------------------
 def run_main(cfg_path: Path, **flags) -> int:
     args = argparse.Namespace(
@@ -163,10 +163,10 @@ def test() -> None:
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_port}"
 
-    ID_OK = "1K58qIA6uO2LasNdfmk41Y4XsP7cEYSg-UGTLBAkTxvY"
-    ID_BIG = "1ScJqYvs4XJVaO8lLRPGv2U4FxD408DicDu3LtHBuhNY"
-    ID_PRIVATE = "17LQTJllRsCpki2H8dY7YDD0cpp0K9li0gQ4T0PHKz1E"
-    ID_HIDDEN = "1DOSu3sFpf4BC9Kr28rpB250bALbrpiObofTtnOeey5Q"
+    ID_OK = "SYNTHETICdeck01xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ID_BIG = "SYNTHETICdeck02xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ID_PRIVATE = "SYNTHETICdeck03xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ID_HIDDEN = "SYNTHETICdeck04xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     pdfs = {ID_OK: make_pdf(12, "Paper"), ID_BIG: make_pdf(45, "Long"), ID_HIDDEN: make_pdf(6, "Hidden")}
 
     def fake_http_get(url, max_bytes, timeout=60):
@@ -177,16 +177,16 @@ def test() -> None:
 
     src._http_get = fake_http_get
 
-    # --- 貼文情境 ---
-    fake.add_post("p_ok", f"明天我會分享 prima.cpp，簡報調整中\nhttps://docs.google.com/presentation/d/{ID_OK}/edit?usp=sharing")
-    fake.add_post("p_big", f"明天分享 Weight-Space Programming https://docs.google.com/presentation/d/{ID_BIG}/edit?usp=sharing")
-    fake.add_post("p_private", f"明天分享 MemFreezing https://docs.google.com/presentation/d/{ID_PRIVATE}/edit?usp=sharing")
+    # --- post scenarios (synthetic; Chinese on purpose, the real channel is in Chinese) ---
+    fake.add_post("p_ok", f"明天我會分享一篇論文，簡報調整中\nhttps://docs.google.com/presentation/d/{ID_OK}/edit?usp=sharing")
+    fake.add_post("p_big", f"明天分享一份很長的簡報 https://docs.google.com/presentation/d/{ID_BIG}/edit?usp=sharing")
+    fake.add_post("p_private", f"明天分享另一篇論文 https://docs.google.com/presentation/d/{ID_PRIVATE}/edit?usp=sharing")
     fake.add_post("p_hidden", f"這是簡報 [連結](https://docs.google.com/presentation/d/{ID_HIDDEN}/edit)，調整中")
     fake.add_post("p_optout", f"未發表成果 #no-summary https://docs.google.com/presentation/d/{ID_OK}/edit")
-    fake.add_post("p_announce", "明天請大家 9:10 上課")
-    fake.add_post("p_preview", "我下禮拜三預計會分享本地模型，有興趣可以按個表情")
-    fake.add_post("p_sheet", "https://docs.google.com/spreadsheets/d/1dFIX65yt8G9zYlAEP4tO_DApDRQsHj2F7WgP9Jqmet0/edit")
-    fake.add_post("p_github", "https://github.com/jingyaogong/minimind 給大家參考")
+    fake.add_post("p_announce", "明天請大家準時開會")
+    fake.add_post("p_preview", "我下週預計會分享某個主題，有興趣可以按個表情")
+    fake.add_post("p_sheet", "https://docs.google.com/spreadsheets/d/SYNTHETICsheet01xxxxxxxxxxxxxxxxxxxxxxxxxxxx/edit")
+    fake.add_post("p_github", "https://github.com/example/example-repo 給大家參考")
     fake.add_post("p_video", "demo 影片", files=[{"id": "f_mp4", "name": "demo.mp4", "extension": "mp4"}])
     fake.add_post("p_system", "已將頻道標題更改", type_="system_header_change")
     fake.add_post("p_reply", f"https://docs.google.com/presentation/d/{ID_OK}/edit", root_id="p_ok")
@@ -218,10 +218,10 @@ def test() -> None:
 
     expected = {"p_ok", "p_big", "p_hidden", "p_pdf", "p_two"} | ({"p_pptx"} if pptx_bytes else set())
 
-    # 1) dry-run：不發文、不寫狀態
+    # 1) dry-run: nothing posted, no state written
     out = tmp / "dry"
     run_main(write_cfg("thread", "dry.sqlite3"), dry_run=True, out=str(out), since_hours=24 * 7)
-    assert not fake.created and not fake.uploads, "dry-run 不應該發文"
+    assert not fake.created and not fake.uploads, "dry-run must not post"
     produced = {p.stem for p in out.glob("p_*.md")}
     assert produced == expected | {"p_private"}, produced
     assert (out / "p_ok_key1.png").read_bytes()[:4] == b"\x89PNG"
@@ -230,7 +230,7 @@ def test() -> None:
     assert "簡報 2 快速導讀" in (out / "p_two.md").read_text(encoding="utf-8")
     print("1 dry-run ok:", sorted(produced))
 
-    # 2) thread 模式：回覆在原貼文底下
+    # 2) thread mode: replies go under the original post
     cfg_thread = write_cfg("thread", "thread.sqlite3")
     run_main(cfg_thread, since_hours=24 * 7)
     replies = {c["root_id"]: c for c in fake.created if c.get("root_id")}
@@ -247,25 +247,25 @@ def test() -> None:
     store.close()
     print("2 thread mode ok: replies =", len(replies), "uploads =", len(fake.uploads))
 
-    # 3) 45 頁簡報：關鍵頁必須是實際送出的頁面
+    # 3) 45-page deck: key pages must be pages that were actually sent to the model
     big_msg = replies["p_big"]["message"]
     picked = [int(x) for x in re.findall(r"第 (\d+) 頁", big_msg)]
     assert picked == [2, 3], picked
     print("3 long deck ok: key pages =", picked)
 
-    # 4) 再跑一次：全部去重，不重複發文
+    # 4) second run: everything is deduplicated, nothing is posted again
     before = len(fake.created)
     run_main(cfg_thread, since_hours=24 * 7)
-    assert len(fake.created) == before, "第二次執行不應該再發文"
+    assert len(fake.created) == before, "second run must not post again"
     print("4 dedupe ok")
 
-    # 5) 同一份簡報隔週重貼（新的貼文 ID）要重新摘要
+    # 5) the same deck re-posted a week later (new post id) is summarized again
     fake.add_post("p_repost", f"延期到這週 https://docs.google.com/presentation/d/{ID_OK}/edit", age_min=5)
     run_main(cfg_thread, since_hours=24 * 7)
     assert any(c.get("root_id") == "p_repost" for c in fake.created)
     print("5 repost ok")
 
-    # 6) test_channel 模式：發到測試頻道，附原貼文連結，不進討論串
+    # 6) test_channel mode: posts go to the test channel with a link to the original, not into a thread
     fake.created.clear(); fake.uploads.clear()
     run_main(write_cfg("test_channel", "testch.sqlite3"), since_hours=24 * 7)
     posts = [c for c in fake.created if c["channel_id"] == "ch_test"]
@@ -274,7 +274,7 @@ def test() -> None:
     assert all(u["channel"] == "ch_test" for u in fake.uploads)
     print("6 test-channel mode ok")
 
-    # 6b) --require-test-channel：設定檔寫 thread 也只會發到測試頻道
+    # 6b) --require-test-channel: even with reply_mode = thread, posts only go to the test channel
     fake.created.clear(); fake.uploads.clear()
     run_main(write_cfg("thread", "forced.sqlite3"), since_hours=24 * 7, require_test_channel=True)
     non_dm = [c for c in fake.created if c["channel_id"] != "ch_dm"]
@@ -282,7 +282,7 @@ def test() -> None:
     assert all(u["channel"] == "ch_test" for u in fake.uploads)
     print("6b forced test-channel ok")
 
-    # 7) HTML 附件：預設關閉，開啟後（有瀏覽器時）可轉檔
+    # 7) HTML attachments: off by default; convertible when a browser is available
     html_src = src.find_deck_sources(fake.posts["p_html"], enable_html=False)
     assert html_src == []
     if shutil.which("google-chrome") or shutil.which("chromium"):

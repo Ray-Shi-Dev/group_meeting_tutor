@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-實驗室 Group Meeting 簡報自動摘要 Agent：主流程
+Group Meeting slide summary agent: main pipeline.
 
-    python3 main.py --config config.toml                 # 正式執行（依設定檔的 reply_mode 發文）
-    python3 main.py --config config.toml --dry-run       # 不發文，結果寫到 --out 目錄
-    python3 main.py --config config.toml --dry-run --fake-llm   # 連模型都不呼叫，只測抓貼文與轉圖
-    python3 main.py --config config.toml --since-hours 720      # 測試用：回溯 30 天的貼文
+    python3 main.py --config config.toml                 # real run (posts according to reply_mode)
+    python3 main.py --config config.toml --dry-run       # no posting; results go to the --out directory
+    python3 main.py --config config.toml --dry-run --fake-llm   # no model calls; tests fetching and rendering only
+    python3 main.py --config config.toml --since-hours 720      # testing: look back 30 days
 
-需要 Python 3.10+ 與 poppler-utils（3.10 另需 python3-tomli）。
+Requires Python 3.10+ and poppler-utils (3.10 also needs python3-tomli).
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ logger = logging.getLogger("lab_slide_summarizer")
 
 
 # ---------------------------------------------------------------------------
-# 設定
+# Configuration
 # ---------------------------------------------------------------------------
 @dataclass
 class Config:
@@ -64,7 +64,7 @@ class Config:
     test_channel_id: str = ""
 
     timezone: str = "Asia/Taipei"
-    window_weekday: int = 2               # 0=週一 … 2=週三
+    window_weekday: int = 2               # 0 = Monday ... 2 = Wednesday
     window_hour: int = 12
     budget_sec: int = 1800
 
@@ -83,7 +83,7 @@ class Config:
     ollama_model: str = "qwen2.5vl:7b"
 
     db_path: str = "state.sqlite3"
-    work_root: str = ""                   # 空字串＝系統暫存目錄
+    work_root: str = ""                   # empty = system temp directory
     exchange_root: str = "/var/tmp"
 
     @staticmethod
@@ -96,30 +96,30 @@ class Config:
         known = set(Config.__dataclass_fields__)
         unknown = set(flat) - known
         if unknown:
-            raise SystemExit(f"設定檔有不認得的欄位：{sorted(unknown)}")
+            raise SystemExit(f"Unknown config keys: {sorted(unknown)}")
         cfg = Config(**flat)
         if cfg.reply_mode not in ("thread", "test_channel"):
-            raise SystemExit("reply_mode 必須是 thread 或 test_channel")
+            raise SystemExit("reply_mode must be thread or test_channel")
         if cfg.reply_mode == "test_channel" and not cfg.test_channel_id:
-            raise SystemExit("reply_mode=test_channel 時必須設定 test_channel_id")
+            raise SystemExit("test_channel_id is required when reply_mode = test_channel")
         return cfg
 
 
 def load_token(cfg: Config) -> str:
-    """優先讀環境變數 MM_BOT_TOKEN（讀完即從環境移除），否則讀 token_file。"""
+    """Prefer the MM_BOT_TOKEN environment variable (removed from the environment once read), else token_file."""
     token = os.environ.pop("MM_BOT_TOKEN", "").strip()
     if token:
         return token
     if not cfg.token_file:
-        raise SystemExit("找不到 Mattermost token：請設定 MM_BOT_TOKEN 或 token_file")
+        raise SystemExit("No Mattermost token: set MM_BOT_TOKEN or token_file")
     path = Path(cfg.token_file)
     if path.stat().st_mode & 0o077:
-        raise SystemExit(f"{path} 的權限太寬，請 chmod 600")
+        raise SystemExit(f"{path} is readable by others; run chmod 600")
     return path.read_text(encoding="utf-8").strip()
 
 
 def window_start(now: datetime, weekday: int, hour: int) -> datetime:
-    """回傳 now 之前最近一次的「週 weekday 的 hour 點」。週三 08:30 執行時＝上週三 12:00。"""
+    """Most recent `weekday` at `hour`:00 before `now`. Run on Wednesday 08:30 -> last Wednesday 12:00."""
     cand = now.replace(hour=hour, minute=0, second=0, microsecond=0)
     cand -= timedelta(days=(now.weekday() - weekday) % 7)
     if cand >= now:
@@ -128,7 +128,7 @@ def window_start(now: datetime, weekday: int, hour: int) -> datetime:
 
 
 # ---------------------------------------------------------------------------
-# 假模型（--fake-llm）：只用來測抓貼文、轉圖、發文的管線，不消耗訂閱額度
+# Fake model (--fake-llm): exercises fetching, rendering and posting without using the subscription.
 # ---------------------------------------------------------------------------
 def install_fake_llm(harness: SlideSummaryHarness) -> None:
     def fake(prompt: str, pages: Optional[List[Tuple[int, Path]]], timeout_sec: int) -> str:
@@ -152,7 +152,7 @@ def install_fake_llm(harness: SlideSummaryHarness) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 單次執行
+# One run
 # ---------------------------------------------------------------------------
 @dataclass
 class RunReport:
@@ -189,7 +189,7 @@ class RunReport:
 def build_decks_for_post(
     post: Dict[str, Any], cfg: Config, mm: MattermostClient, work_dir: Path
 ) -> Tuple[List[SlideDeckInput], List[str]]:
-    """回傳（可摘要的簡報, 錯誤代碼清單）。"""
+    """Return (decks ready to summarize, error codes)."""
     decks: List[SlideDeckInput] = []
     errors: List[str] = []
     max_bytes = cfg.max_download_mb * 1024 * 1024
@@ -222,11 +222,11 @@ def build_decks_for_post(
 
 
 def run(cfg: Config, args: argparse.Namespace) -> int:
-    """執行一次。回傳 0 全部成功、1 有失敗項目、2 以上為無法執行。"""
+    """Run once. Returns 0 = all good, 1 = some items failed, 2+ = could not run."""
     try:
         return _run(cfg, args)
     except MattermostError as exc:
-        # 連不上、token 無效、Bot 不在頻道裡等：沒有任何貼文被處理
+        # Unreachable, invalid token, bot not in the channel, etc.: nothing was processed.
         logger.error("MATTERMOST_ERROR status=%s code=%s", exc.status, exc.code)
         return 5
 
@@ -240,7 +240,7 @@ def _run(cfg: Config, args: argparse.Namespace) -> int:
         return 2
 
     if getattr(args, "require_test_channel", False):
-        # 自動化檢查專用：不管設定檔怎麼寫，一律只發到測試頻道
+        # For automated checks: post to the test channel only, whatever the config says.
         if not cfg.test_channel_id:
             logger.error("CONFIG_ERROR require_test_channel_without_test_channel_id")
             return 4
@@ -290,7 +290,7 @@ def _run(cfg: Config, args: argparse.Namespace) -> int:
     report = RunReport()
 
     def deliver(post: Dict[str, Any], message: str, uploads: List[Path]) -> str:
-        """依模式送出一則回覆，回傳回覆的 post id（dry-run 回傳空字串）。"""
+        """Deliver one reply according to the mode; returns the reply post id (empty for dry-run)."""
         if out_dir:
             (out_dir / f"{post['id']}.md").write_text(message, encoding="utf-8")
             for i, png in enumerate(uploads, start=1):
@@ -346,7 +346,7 @@ def _run(cfg: Config, args: argparse.Namespace) -> int:
 
             try:
                 if blocked:
-                    # 同一則貼文只要有一份簡報被攔下，整則都不發，交給維護者人工檢查
+                    # If any deck in a post is blocked, post nothing for that post; the maintainer reviews it.
                     report.blocked.append(pid)
                     if not args.dry_run:
                         store.record(pid, "blocked_injection")
@@ -398,15 +398,15 @@ def _run(cfg: Config, args: argparse.Namespace) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Group Meeting 簡報自動摘要 Agent")
+    parser = argparse.ArgumentParser(description="Group Meeting slide summary agent")
     parser.add_argument("--config", required=True)
-    parser.add_argument("--dry-run", action="store_true", help="不發文、不寫狀態，結果存到 --out")
-    parser.add_argument("--out", default="dryrun_out", help="dry-run 的輸出目錄")
-    parser.add_argument("--fake-llm", action="store_true", help="用固定的假摘要代替模型，只測管線")
-    parser.add_argument("--since-hours", type=int, default=0, help="測試用：改成回溯指定小時數的貼文")
+    parser.add_argument("--dry-run", action="store_true", help="no posting, no state; write results to --out")
+    parser.add_argument("--out", default="dryrun_out", help="output directory for --dry-run")
+    parser.add_argument("--fake-llm", action="store_true", help="use a canned summary instead of the model")
+    parser.add_argument("--since-hours", type=int, default=0, help="testing: look back this many hours instead")
     parser.add_argument(
         "--require-test-channel", action="store_true",
-        help="強制只發到測試頻道（忽略設定檔的 reply_mode），自動化檢查使用",
+        help="post to the test channel only (ignores reply_mode); used by automated checks",
     )
     args = parser.parse_args()
     sys.exit(run(Config.load(args.config), args))
