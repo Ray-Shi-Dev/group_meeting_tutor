@@ -1,10 +1,10 @@
-# 離線測試結果
+# Offline test result
 
-- commit：6ccbe626cfe3
-- 時間（UTC）：2026-11-13 04:26
-- 整體：success
+- Commit: dcdf4c9c7cc1
+- Time (UTC): 2026-11-13 04:34
+- Overall: success
 
-### Python 3.10：success
+### Python 3.10: success
 ```
 1 dry-run ok: ['p_big', 'p_hidden', 'p_ok', 'p_pdf', 'p_private', 'p_two']
 2 thread mode ok: replies = 6 uploads = 12
@@ -15,8 +15,14 @@
 6b forced test-channel ok
 7 html conversion not available here: CONVERT_FAILED
 ALL PASS
+1 url parsing ok
+2 fully automatic path ok
+3 re-run is idempotent ok
+4 needs-admin path ok
+5 after-admin re-run ok
+ALL PASS
 ```
-### Python 3.11：success
+### Python 3.11: success
 ```
 1 dry-run ok: ['p_big', 'p_hidden', 'p_ok', 'p_pdf', 'p_private', 'p_two']
 2 thread mode ok: replies = 6 uploads = 12
@@ -27,8 +33,14 @@ ALL PASS
 6b forced test-channel ok
 7 html conversion not available here: CONVERT_FAILED
 ALL PASS
+1 url parsing ok
+2 fully automatic path ok
+3 re-run is idempotent ok
+4 needs-admin path ok
+5 after-admin re-run ok
+ALL PASS
 ```
-### Python 3.13：success
+### Python 3.13: success
 ```
 1 dry-run ok: ['p_big', 'p_hidden', 'p_ok', 'p_pdf', 'p_private', 'p_two']
 2 thread mode ok: replies = 6 uploads = 12
@@ -38,5 +50,11 @@ ALL PASS
 6 test-channel mode ok
 6b forced test-channel ok
 7 html conversion not available here: CONVERT_FAILED
+ALL PASS
+1 url parsing ok
+2 fully automatic path ok
+3 re-run is idempotent ok
+4 needs-admin path ok
+5 after-admin re-run ok
 ALL PASS
 ```
