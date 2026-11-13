@@ -17,6 +17,7 @@ These cannot be scripted. Details are in `docs/SETUP.md`.
 | What | Who | State |
 | --- | --- | --- |
 | Make the GitHub repo private | Ray | Open |
+| Approve a force-push that removes real deck ids from old commits (a cleaned copy of the history is prepared) | Ray | Open |
 | Run `tools/mm_setup.py` (paste channel URL and personal token) | Ray | Open |
 | If the server restricts bot creation: send the generated request to the Mattermost admin | Ray | Open |
 | Sign in to the Claude CLI on the execution machine | Ray | Open |
@@ -67,7 +68,7 @@ Questions that need both people or the professor. Move the outcome to `DECISIONS
 Newest first. Format: `date | who | what`.
 
 - 2026-11-13 | Ray | T15: added `tools/mm_setup.py` and its tests; `docs/SETUP.md` replaces the runner guide and lists the human-only steps.
-- 2026-11-13 | Ray | T14: converted docs, comments, CLI text and CI reports to English (D19). Replaced test fixtures with synthetic ids and rewrote history to remove the old ones (D21).
+- 2026-11-13 | Ray | T14: converted docs, comments, CLI text and CI reports to English (D19). Replaced test fixtures with synthetic ids (D21).
 - 2026-11-13 | Ray | T12: live-check now has a gate job, so `request=0` sends nothing to the self-hosted runner.
 - 2026-11-13 | Ray | T12: added the offline-tests and live-check workflows and `tools/live_check.py`.
 - 2026-11-13 | Ray | T3, T4: ran the real Claude CLI on synthetic decks end to end; tuned the prompt from the results (D17, D18).
