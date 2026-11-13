@@ -1,0 +1,63 @@
+name: live-check
+
+# 在握有 Mattermost token 的自架 runner 上做真實環境檢查。
+# 觸發方式：修改 .ci/live-request 並推到 main，或在 Actions 頁面手動執行。
+# 結果（不含 token、網址、簡報內容）寫到 ci-results 分支的 results/live.md。
+#
+# 安全性：只接受 main 的 push 與手動觸發，不接受 pull_request，
+# 所以只有對這個 repo 有寫入權的人能讓程式在 runner 上執行。
+
+on:
+  push:
+    branches: [main]
+    paths: [".ci/live-request"]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 模式
+        type: choice
+        default: dryrun-fake
+        options: [dryrun-fake, dryrun-real, test-channel]
+      since_hours:
+        description: 回溯小時數
+        default: "168"
+
+concurrency:
+  group: live-check
+  cancel-in-progress: false
+
+jobs:
+  live:
+    if: github.repository == 'Ray-Shi-Dev/group_meeting_tutor'
+    runs-on: [self-hosted, lab-summarizer]
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      INPUT_MODE: ${{ inputs.mode }}
+      INPUT_SINCE: ${{ inputs.since_hours }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 讀取請求
+        id: req
+        run: |
+          mode="$INPUT_MODE"; since="$INPUT_SINCE"
+          if [ -z "$mode" ]; then
+            mode="$(sed -n 's/^mode=//p' .ci/live-request | head -n1)"
+            since="$(sed -n 's/^since_hours=//p' .ci/live-request | head -n1)"
+          fi
+          case "$mode" in dryrun-fake|dryrun-real|test-channel) ;; *) echo "不認得的模式"; exit 1 ;; esac
+          case "$since" in ''|*[!0-9]*) since=168 ;; esac
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "since=$since" >> "$GITHUB_OUTPUT"
+      - name: 真實環境檢查
+        run: |
+          config="${LAB_SUMMARIZER_CONFIG:-$HOME/.config/lab-summarizer/config.toml}"
+          python3 tools/live_check.py --config "$config" \
+            --mode "${{ steps.req.outputs.mode }}" --since-hours "${{ steps.req.outputs.since }}" \
+            --result live.md
+      - name: 寫回 ci-results
+        if: always()
+        run: |
+          [ -f live.md ] || printf '# 真實環境檢查結果\n\n檢查腳本沒有產生報告（commit %s）。\n' "${GITHUB_SHA:0:12}" > live.md
+          tools/publish_result.sh live.md live.md

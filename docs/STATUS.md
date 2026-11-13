@@ -16,8 +16,8 @@
 | --- | --- | --- | --- |
 | T1 | 在本機跑 `tests/test_pipeline.py` 並看到 `ALL PASS` | Ray | 進行中：雲端環境已通過（Python 3.13），Ray 的 WSL 尚未跑 |
 | T2 | 用個人 token 跑 `--dry-run --fake-llm --since-hours 1440`，確認抓得到貼文、Google 匯出可用（R5、R6） | Ray | 未開始 |
-| T3 | 確認 Claude CLI 的 `--allowedTools`、`--tools ""`、`--output-format json` 行為與程式假設一致（R31） | | 未開始 |
-| T4 | 用真的模型跑 `--dry-run`，量每份簡報耗時，調整 `vision_timeout_sec` | | 未開始 |
+| T3 | 確認 Claude CLI 的 `--allowedTools`、`--tools ""`、`--output-format json` 行為與程式假設一致（R31） | Ray | 完成：CLI 2.1.323 實測三個參數皆符合；`live_check.py` 每次會在執行機器上重新確認 |
+| T4 | 用真的模型跑 `--dry-run`，量每份簡報耗時，調整 `vision_timeout_sec` | Ray | 部分完成：合成簡報 8 頁約 50 秒、30 頁約 70 秒，420 秒的時限足夠；真實簡報待 runner 上量測 |
 | T5 | 找 1–2 位非本科系的人，依 README 的驗收清單看 3 份摘要（論文、工具、經驗各一） | | 未開始 |
 | T6 | 請 Mattermost 管理員開 Bot 帳號與測試頻道（R26、R30） | | 未開始 |
 | T7 | 決定程式跑在哪台機器，建立專用低權限帳號（R36） | | 未開始 |
@@ -25,13 +25,14 @@
 | T9 | 確認 `ollama_model` 名稱，決定要不要開啟本地備援（R32） | | 未開始 |
 | T10 | 評估是否開啟 HTML 附件（R9） | | 未開始 |
 | T11 | 切換成 `reply_mode = "thread"` 正式上線 | | 未開始 |
-| T12 | 自動化開發循環：GitHub 代管的離線測試 + 自架 runner 的真實環境檢查，結果寫回 `ci-results` 分支 | Ray | 進行中 |
-| T13 | 相容 Python 3.10（Ubuntu 22.04 預設版本） | Ray | 進行中 |
+| T12 | 自動化開發循環：GitHub 代管的離線測試 + 自架 runner 的真實環境檢查，結果寫回 `ci-results` 分支 | Ray | 程式完成；等人工設定 runner（見 `docs/RUNNER_SETUP.md`） |
+| T13 | 相容 Python 3.10（Ubuntu 22.04 預設版本） | Ray | 完成（由 offline-tests 持續驗證） |
 
 ## 待討論
 
 需要兩個人或老師決定的事，有結論後移到 `DECISIONS.md`。
 
+- repo 目前是公開的。自架 runner 與 `ci-results` 分支都假設 repo 是私人的，裝 runner 之前要先決定。
 - 摘要要掛在誰的訂閱上跑？該訂閱的條款是否允許排程自動執行？
 - 講者不想被摘要時用 `#no-summary`，這個做法要不要先跟大家公告？
 - 08:30 的版本常常不是最終版，要不要改成更晚觸發，或 meeting 後再補一版？
@@ -50,6 +51,9 @@
 
 最新的寫在最上面。格式：`日期｜誰｜做了什麼`。
 
+- 2026-11-13｜Ray｜T12：加入 offline-tests 與 live-check 兩個 workflow、`tools/live_check.py`、`docs/RUNNER_SETUP.md`。
+- 2026-11-13｜Ray｜T3、T4：用真的 Claude CLI 跑合成簡報，整條摘要路徑實測通過；依結果調整提示詞（D17、D18）。
+- 2026-11-13｜Ray｜T13：相容 Python 3.10；另加每份簡報耗時日誌、`--require-test-channel`、Mattermost 連線錯誤代碼。
 - 2026-11-13｜Ray｜認領 T12、T13。
 - 2026-11-13｜Ray｜T1：從 repo 最新版本（f6497a4）在雲端環境跑 `tests/test_pipeline.py`，7 項全過。WSL 上還沒跑過。
 - 2026-11-13｜Ray｜建立 repo，加入需求、進度、決策三份文件與 CLAUDE.md。

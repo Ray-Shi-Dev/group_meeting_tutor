@@ -1,0 +1,73 @@
+name: offline-tests
+
+# 每次推送都在 GitHub 代管的機器上跑端到端測試（假伺服器，不需要任何機密）。
+# 結果寫到 ci-results 分支的 results/offline.md，讓雙方的 Claude 用 git 就讀得到。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: 安裝工具
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq poppler-utils
+          pip install -q reportlab tomli
+      - name: 端到端測試
+        id: run
+        run: |
+          set -o pipefail
+          python tests/test_pipeline.py 2>&1 | tee test.log
+      - name: 整理結果
+        if: always()
+        run: |
+          {
+            echo "### Python ${{ matrix.python }}：${{ steps.run.outcome }}"
+            echo '```'
+            grep -v '^\[20' test.log | tail -n 25 || true
+            echo '```'
+          } > "offline-${{ matrix.python }}.md"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-${{ matrix.python }}
+          path: offline-${{ matrix.python }}.md
+
+  publish:
+    needs: test
+    if: always() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: parts
+          merge-multiple: true
+      - name: 寫回 ci-results
+        run: |
+          {
+            echo "# 離線測試結果"
+            echo
+            echo "- commit：${GITHUB_SHA:0:12}"
+            echo "- 時間（UTC）：$(date -u '+%Y-%m-%d %H:%M')"
+            echo "- 整體：${{ needs.test.result }}"
+            echo
+            cat parts/offline-*.md
+          } > offline.md
+          tools/publish_result.sh offline.md offline.md

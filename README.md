@@ -14,7 +14,7 @@
 
 ## 需求
 
-- Python 3.11 以上（只用標準函式庫）
+- Python 3.10 以上（只用標準函式庫；3.10 另需 `sudo apt install python3-tomli`）
 - poppler-utils：`sudo apt install poppler-utils`
 - Claude Code CLI，已用訂閱帳號登入
 - 選用：LibreOffice（PPTX 附件）、Chromium（HTML 附件）、Ollama（本地備援）
@@ -30,6 +30,9 @@
 | `store.py` | SQLite 處理狀態 |
 | `config.example.toml` | 設定範本 |
 | `tests/test_pipeline.py` | 端到端測試（假伺服器，不需網路） |
+| `tools/live_check.py` | 真實環境檢查，輸出不含內容的報告 |
+| `.github/workflows/` | 自動測試；結果寫到 `ci-results` 分支 |
+| `docs/RUNNER_SETUP.md` | 自架 runner 的一次性設定 |
 
 ## 設定
 
@@ -87,11 +90,12 @@ CRON_TZ=Asia/Taipei
 
 ## 尚未在真實環境驗證
 
-以下三項在開發時無法實測，第一次跑請特別留意：
+以下幾項在開發時無法實測，第一次跑請特別留意：
 
-1. Google Slides 免登入匯出 PDF（`/export/pdf`）對原生簡報與上傳的 .pptx 是否都可用。
-2. Claude CLI 的 `--allowedTools`、`--tools ""`、`--output-format json` 參數行為。
-3. Ollama 備援（預設關閉）。
+1. Mattermost 的讀取、上傳與發文（目前只對假伺服器測過）。
+2. Google Slides 免登入匯出 PDF（`/export/pdf`）對原生簡報與上傳的 .pptx 是否都可用。
+3. 真實簡報的摘要品質與耗時（目前只用合成的英文測試簡報跑過 Claude CLI）。
+4. Ollama 備援（預設關閉）。
 
 ## 已知限制
 
