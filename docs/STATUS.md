@@ -27,6 +27,8 @@
 | T11 | 切換成 `reply_mode = "thread"` 正式上線 | | 未開始 |
 | T12 | 自動化開發循環：GitHub 代管的離線測試 + 自架 runner 的真實環境檢查，結果寫回 `ci-results` 分支 | Ray | 程式完成；等人工設定 runner（見 `docs/RUNNER_SETUP.md`） |
 | T13 | 相容 Python 3.10（Ubuntu 22.04 預設版本） | Ray | 完成（由 offline-tests 持續驗證） |
+| T14 | 把 repo 內容改成英文（文件、註解、說明文字）；提示詞與發到 Mattermost 的文字維持繁體中文 | Ray | 進行中 |
+| T15 | `tools/mm_setup.py`：用個人 token 自動建立測試頻道、嘗試建立 Bot、寫好設定檔（把 T6 的人工步驟降到最少） | Ray | 進行中 |
 
 ## 待討論
 
@@ -51,6 +53,7 @@
 
 最新的寫在最上面。格式：`日期｜誰｜做了什麼`。
 
+- 2026-11-13｜Ray｜認領 T14、T15。
 - 2026-11-13｜Ray｜T12：加入 offline-tests 與 live-check 兩個 workflow、`tools/live_check.py`、`docs/RUNNER_SETUP.md`。
 - 2026-11-13｜Ray｜T3、T4：用真的 Claude CLI 跑合成簡報，整條摘要路徑實測通過；依結果調整提示詞（D17、D18）。
 - 2026-11-13｜Ray｜T13：相容 Python 3.10；另加每份簡報耗時日誌、`--require-test-channel`、Mattermost 連線錯誤代碼。
