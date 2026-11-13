@@ -1,11 +1,11 @@
 name: live-check
 
-# 在握有 Mattermost token 的自架 runner 上做真實環境檢查。
-# 觸發方式：修改 .ci/live-request 並推到 main，或在 Actions 頁面手動執行。
-# 結果（不含 token、網址、簡報內容）寫到 ci-results 分支的 results/live.md。
+# Live environment check on the self-hosted runner that holds the Mattermost token.
+# Trigger: change .ci/live-request and push to main, or run it manually from the Actions page.
+# The result (no token, URLs or slide content) is written to results/live.md on the ci-results branch.
 #
-# 安全性：只接受 main 的 push 與手動觸發，不接受 pull_request，
-# 所以只有對這個 repo 有寫入權的人能讓程式在 runner 上執行。
+# Security: only pushes to main and manual runs trigger this, never pull_request,
+# so only people with write access to this repo can run code on the runner.
 
 on:
   push:
@@ -14,12 +14,12 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 模式
+        description: Mode
         type: choice
         default: dryrun-fake
         options: [dryrun-fake, dryrun-real, test-channel]
       since_hours:
-        description: 回溯小時數
+        description: Hours to look back
         default: "168"
 
 concurrency:
@@ -27,37 +27,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  live:
+  # Runs on a GitHub-hosted machine: validates the request and decides whether to go on.
+  # With request=0 in .ci/live-request nothing is sent to the self-hosted runner.
+  gate:
     if: github.repository == 'Ray-Shi-Dev/group_meeting_tutor'
-    runs-on: [self-hosted, lab-summarizer]
-    timeout-minutes: 60
+    runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      go: ${{ steps.req.outputs.go }}
+      mode: ${{ steps.req.outputs.mode }}
+      since: ${{ steps.req.outputs.since }}
     env:
       INPUT_MODE: ${{ inputs.mode }}
       INPUT_SINCE: ${{ inputs.since_hours }}
     steps:
       - uses: actions/checkout@v4
-      - name: 讀取請求
+      - name: Read request
         id: req
         run: |
+          go=true
           mode="$INPUT_MODE"; since="$INPUT_SINCE"
           if [ -z "$mode" ]; then
             mode="$(sed -n 's/^mode=//p' .ci/live-request | head -n1)"
             since="$(sed -n 's/^since_hours=//p' .ci/live-request | head -n1)"
+            request="$(sed -n 's/^request=//p' .ci/live-request | head -n1)"
+            case "$request" in ''|0|*[!0-9]*) go=false ;; esac
           fi
-          case "$mode" in dryrun-fake|dryrun-real|test-channel) ;; *) echo "不認得的模式"; exit 1 ;; esac
+          case "$mode" in dryrun-fake|dryrun-real|test-channel) ;; *) echo "unknown mode"; exit 1 ;; esac
           case "$since" in ''|*[!0-9]*) since=168 ;; esac
+          echo "go=$go" >> "$GITHUB_OUTPUT"
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
           echo "since=$since" >> "$GITHUB_OUTPUT"
-      - name: 真實環境檢查
+
+  live:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
+    runs-on: [self-hosted, lab-summarizer]
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      MODE: ${{ needs.gate.outputs.mode }}
+      SINCE: ${{ needs.gate.outputs.since }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Live check
         run: |
           config="${LAB_SUMMARIZER_CONFIG:-$HOME/.config/lab-summarizer/config.toml}"
-          python3 tools/live_check.py --config "$config" \
-            --mode "${{ steps.req.outputs.mode }}" --since-hours "${{ steps.req.outputs.since }}" \
-            --result live.md
-      - name: 寫回 ci-results
+          python3 tools/live_check.py --config "$config" --mode "$MODE" --since-hours "$SINCE" --result live.md
+      - name: Publish to ci-results
         if: always()
         run: |
-          [ -f live.md ] || printf '# 真實環境檢查結果\n\n檢查腳本沒有產生報告（commit %s）。\n' "${GITHUB_SHA:0:12}" > live.md
+          [ -f live.md ] || printf '# Live check result\n\nThe check script produced no report (commit %s).\n' "${GITHUB_SHA:0:12}" > live.md
           tools/publish_result.sh live.md live.md

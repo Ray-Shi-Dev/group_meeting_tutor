@@ -1,6 +1,6 @@
-# 修改這個檔案並推到 main，就會在自架 runner 上觸發一次真實環境檢查。
-# mode：dryrun-fake（不發文、不呼叫模型）｜dryrun-real（不發文、呼叫模型）｜test-channel（發到測試頻道）
-# 每次要重跑就把 request 的數字加一。
+# Change this file and push to main to trigger one live check on the self-hosted runner.
+# mode: dryrun-fake (no posting, no model) | dryrun-real (no posting, real model) | test-channel (posts to the test channel)
+# request=0 means "do nothing". Set it to 1 for the first run and bump it by one for every rerun.
 mode=dryrun-fake
 since_hours=1440
 request=0
